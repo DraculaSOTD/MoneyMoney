@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Dashboard - Money Money</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="main-header" style="position: relative; background-color: var(--color-background); border-bottom: 1px solid var(--color-card-border);">
+        <div class="container">
+            <nav class="navbar">
+                <div class="logo">MONEY MONEY</div>
+                <ul class="nav-links">
+                    <li><a href="/dashboard" style="color: var(--color-primary-accent);">Dashboard</a></li>
+                    <li><a href="#signals">Signals</a></li>
+                    <li><a href="#analysis">Analysis</a></li>
+                    <li><a href="#models">Models</a></li>
+                </ul>
+                <div class="nav-actions">
+                    <span id="userEmail" style="color: var(--color-text-secondary);"></span>
+                    <a href="/profile" class="login-link">Profile</a>
+                    <button onclick="logout()" class="btn btn-outline" style="padding: 8px 20px;">Logout</button>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main style="padding-top: 100px;">
+        <div class="container">
+            <!-- Dashboard Header -->
+            <div class="dashboard-header">
+                <div>
+                    <h1>Trading Dashboard</h1>
+                    <p style="color: var(--color-text-secondary); margin: 0;">Real-time signals and analysis for crypto and forex markets</p>
+                </div>
+                <div class="subscription-status">
+                    <span id="subscriptionBadge" class="btn btn-primary" style="padding: 8px 16px; font-size: 0.9rem;">
+                        Premium Member
+                    </span>
+                </div>
+            </div>
+
+            <!-- Market Overview -->
+            <section style="margin-bottom: 50px;">
+                <h2 style="margin-bottom: 30px;">Market Overview</h2>
+                <div class="grid grid-4-cols">
+                    <div class="card" style="text-align: center;">
+                        <h3 style="color: var(--color-primary-accent);">Active Signals</h3>
+                        <div style="font-size: 2rem; font-weight: 700; margin: 10px 0;">12</div>
+                        <p style="margin: 0; font-size: 0.9rem;">Currently tracking</p>
+                    </div>
+                    <div class="card" style="text-align: center;">
+                        <h3 style="color: var(--color-primary-accent);">Models Running</h3>
+                        <div style="font-size: 2rem; font-weight: 700; margin: 10px 0;">8</div>
+                        <p style="margin: 0; font-size: 0.9rem;">AI models active</p>
+                    </div>
+                    <div class="card" style="text-align: center;">
+                        <h3 style="color: var(--color-primary-accent);">Accuracy</h3>
+                        <div style="font-size: 2rem; font-weight: 700; margin: 10px 0; color: #22c55e;">87%</div>
+                        <p style="margin: 0; font-size: 0.9rem;">Average model accuracy</p>
+                    </div>
+                    <div class="card" style="text-align: center;">
+                        <h3 style="color: var(--color-primary-accent);">Last Update</h3>
+                        <div style="font-size: 1.2rem; font-weight: 700; margin: 10px 0;" id="lastUpdate">--</div>
+                        <p style="margin: 0; font-size: 0.9rem;">Data refresh</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Trading Instruments -->
+            <section>
+                <h2 style="margin-bottom: 30px;">Trading Instruments</h2>
+                <div class="instruments-grid" id="instrumentsContainer">
+                    <!-- Instruments will be loaded dynamically -->
+                </div>
+            </section>
+
+            <!-- Models Performance -->
+            <section style="margin-top: 50px;">
+                <h2 style="margin-bottom: 30px;">AI Models Performance</h2>
+                <div class="grid grid-3-cols" id="modelsContainer">
+                    <!-- Models will be loaded dynamically -->
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <style>
+        .subscription-status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .instrument-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .instrument-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px var(--color-card-glow);
+        }
+
+        .instrument-symbol {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--color-text-primary);
+        }
+
+        .instrument-name {
+            color: var(--color-text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .price-change {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .signal-indicators {
+            margin: 15px 0;
+        }
+
+        .signal-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 0.9rem;
+        }
+
+        .confidence-bar {
+            height: 4px;
+            background-color: var(--color-card-border);
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            transition: width 0.3s ease;
+        }
+
+        .model-card {
+            text-align: center;
+        }
+
+        .model-accuracy {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 15px 0;
+        }
+
+        .accuracy-high {
+            color: #22c55e;
+        }
+
+        .accuracy-medium {
+            color: #f59e0b;
+        }
+
+        .accuracy-low {
+            color: #ef4444;
+        }
+
+        .live-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #22c55e;
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--color-card-border);
+            border-radius: 50%;
+            border-top-color: var(--color-primary-accent);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-header {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .nav-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+
+    <script>
+        // Check authentication
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+
+            if (!token || !user) {
+                window.location.href = '/auth';
+                return false;
+            }
+
+            try {
+                const userData = JSON.parse(user);
+                document.getElementById('userEmail').textContent = userData.email;
+                return true;
+            } catch (error) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/auth';
+                return false;
+            }
+        }
+
+        // Logout function
+        function logout() {
+            try {
+                // Show loading state
+                const logoutBtn = document.querySelector('button[onclick="logout()"]');
+                if (logoutBtn) {
+                    logoutBtn.textContent = 'Logging out...';
+                    logoutBtn.disabled = true;
+                }
+
+                // Clear authentication data
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+
+                // Clear any cached data
+                localStorage.removeItem('instruments');
+                localStorage.removeItem('models');
+
+                // Show brief message and redirect
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 500);
+
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Logout failed. Please try again.');
+
+                // Reset button state
+                const logoutBtn = document.querySelector('button[onclick="logout()"]');
+                if (logoutBtn) {
+                    logoutBtn.textContent = 'Logout';
+                    logoutBtn.disabled = false;
+                }
+            }
+        }
+
+        // Make logout function globally available
+        window.logout = logout;
+
+        // Load trading instruments
+        async function loadInstruments() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/instruments', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load instruments');
+                }
+
+                const instruments = await response.json();
+                displayInstruments(instruments);
+            } catch (error) {
+                console.error('Error loading instruments:', error);
+                document.getElementById('instrumentsContainer').innerHTML = `
+                    <div class="card" style="grid-column: 1 / -1; text-align: center;">
+                        <p style="color: var(--color-text-secondary);">Failed to load instruments. Please refresh the page.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Display instruments
+        function displayInstruments(instruments) {
+            const container = document.getElementById('instrumentsContainer');
+            container.innerHTML = '';
+
+            instruments.forEach(instrument => {
+                const card = document.createElement('div');
+                card.className = 'instrument-card';
+
+                const priceChangeClass = instrument.change >= 0 ? 'up' : 'down';
+                const priceChangeIcon = instrument.change >= 0 ? '▲' : '▼';
+                const signalClass = instrument.signal === 'BUY' ? 'buy' : 'sell';
+
+                card.innerHTML = `
+                    <div class="instrument-header">
+                        <div>
+                            <div class="instrument-symbol">${instrument.symbol}</div>
+                            <div class="instrument-name">${instrument.name}</div>
+                        </div>
+                        <div class="live-indicator" title="Live Data"></div>
+                    </div>
+
+                    <div style="margin: 20px 0;">
+                        <div class="price ${priceChangeClass}" style="font-size: 1.5rem; margin-bottom: 5px;">
+                            $${instrument.price}
+                        </div>
+                        <div class="price-change ${priceChangeClass}">
+                            ${priceChangeIcon} ${Math.abs(instrument.change)}%
+                        </div>
+                    </div>
+
+                    <div class="signals">
+                        <span class="signal ${signalClass}">${instrument.signal}</span>
+                        <span class="signal" style="background: rgba(225, 0, 122, 0.2); color: var(--color-primary-accent);">
+                            AI Confidence: ${instrument.confidence}%
+                        </span>
+                    </div>
+
+                    <div class="signal-indicators">
+                        <div class="signal-item">
+                            <span>Entry Point:</span>
+                            <span style="color: var(--color-primary-accent);">$${instrument.entryPoint}</span>
+                        </div>
+                        <div class="signal-item">
+                            <span>Take Profit:</span>
+                            <span style="color: #22c55e;">$${instrument.takeProfit}</span>
+                        </div>
+                        <div class="signal-item">
+                            <span>Stop Loss:</span>
+                            <span style="color: #ef4444;">$${instrument.stopLoss}</span>
+                        </div>
+                    </div>
+
+                    <div class="model-accuracy">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 5px;">
+                            <span>Model Accuracy:</span>
+                            <span>${instrument.modelAccuracy}%</span>
+                        </div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${instrument.modelAccuracy}%"></div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        // Load AI models
+        async function loadModels() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/models', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load models');
+                }
+
+                const models = await response.json();
+                displayModels(models);
+            } catch (error) {
+                console.error('Error loading models:', error);
+            }
+        }
+
+        // Display models
+        function displayModels(models) {
+            const container = document.getElementById('modelsContainer');
+            container.innerHTML = '';
+
+            models.forEach(model => {
+                const accuracyClass = model.accuracy >= 80 ? 'accuracy-high' :
+                                    model.accuracy >= 65 ? 'accuracy-medium' : 'accuracy-low';
+
+                const card = document.createElement('div');
+                card.className = 'card model-card';
+                card.innerHTML = `
+                    <h3>${model.name}</h3>
+                    <div class="model-accuracy ${accuracyClass}">${model.accuracy}%</div>
+                    <p style="margin-bottom: 15px;">${model.description}</p>
+
+                    <div style="text-align: left;">
+                        <div class="signal-item">
+                            <span>Backtesting Period:</span>
+                            <span>${model.backtestPeriod}</span>
+                        </div>
+                        <div class="signal-item">
+                            <span>Total Trades:</span>
+                            <span>${model.totalTrades}</span>
+                        </div>
+                        <div class="signal-item">
+                            <span>Win Rate:</span>
+                            <span style="color: #22c55e;">${model.winRate}%</span>
+                        </div>
+                        <div class="signal-item">
+                            <span>Last Updated:</span>
+                            <span>${model.lastUpdated}</span>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        // Update last refresh time
+        function updateLastRefreshTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+            document.getElementById('lastUpdate').textContent = timeString;
+        }
+
+        // Auto-refresh data
+        function startAutoRefresh() {
+            setInterval(() => {
+                loadInstruments();
+                updateLastRefreshTime();
+            }, 30000); // Refresh every 30 seconds
+        }
+
+        // Initialize dashboard
+        window.addEventListener('DOMContentLoaded', function() {
+            if (checkAuth()) {
+                updateLastRefreshTime();
+                loadInstruments();
+                loadModels();
+                startAutoRefresh();
+            }
+        });
+    </script>
+</body>
+</html>
