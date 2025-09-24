@@ -13,16 +13,13 @@
         <div class="container">
             <nav class="navbar">
                 <div class="logo">MONEY MONEY</div>
-                <ul class="nav-links">
-                    <li><a href="/dashboard">Dashboard</a></li>
-                    <li><a href="#signals">Signals</a></li>
-                    <li><a href="#analysis">Analysis</a></li>
-                    <li><a href="#models">Models</a></li>
-                </ul>
+                <div class="nav-links">
+                    <a href="/dashboard" class="nav-link">Dashboard</a>
+                    <a href="/models" class="nav-link">Models</a>
+                </div>
                 <div class="nav-actions">
-                    <span id="userEmail" style="color: var(--color-text-secondary);"></span>
                     <a href="/profile" class="login-link" style="color: var(--color-primary-accent);">Profile</a>
-                    <button onclick="logout()" class="btn btn-outline" style="padding: 8px 20px;">Logout</button>
+                    <button type="button" id="logoutBtn" class="btn btn-outline" style="padding: 8px 20px;">Logout</button>
                 </div>
             </nav>
         </div>
@@ -31,7 +28,12 @@
     <main style="padding-top: 100px;">
         <div class="container">
             <div style="max-width: 800px; margin: 0 auto;">
-                <h1 style="margin-bottom: 40px;">Account Settings</h1>
+                <div style="display: flex; align-items: center; margin-bottom: 40px;">
+                    <button type="button" id="backBtn" class="back-arrow-btn" title="Go back">
+                        ←
+                    </button>
+                    <h1 style="margin: 0; margin-left: 15px;">Account Settings</h1>
+                </div>
 
                 <!-- Account Information -->
                 <section class="card" style="margin-bottom: 40px;">
@@ -228,9 +230,121 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Back Arrow Button Styling */
+        .back-arrow-btn {
+            background: none;
+            border: 2px solid var(--color-card-border);
+            color: var(--color-text-primary);
+            font-size: 1.2rem;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .back-arrow-btn:hover {
+            border-color: var(--color-primary-accent);
+            color: var(--color-primary-accent);
+            background-color: rgba(225, 0, 122, 0.1);
+            transform: translateX(-2px);
+        }
+
+        .back-arrow-btn:active {
+            transform: translateX(-1px);
+            background-color: rgba(225, 0, 122, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            .back-arrow-btn {
+                width: 36px;
+                height: 36px;
+                font-size: 1.1rem;
+            }
+        }
     </style>
 
     <script>
+        // Logout function - with improved error handling and debug logging
+        function logout() {
+            console.log('Logout function called'); // Debug log
+            try {
+                // Show loading state
+                const logoutBtn = document.getElementById('logoutBtn');
+                console.log('Logout button found:', logoutBtn); // Debug log
+
+                if (logoutBtn) {
+                    logoutBtn.textContent = 'Logging out...';
+                    logoutBtn.disabled = true;
+                }
+
+                // Clear authentication data
+                console.log('Clearing authentication data...'); // Debug log
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+
+                // Clear any cached data
+                localStorage.removeItem('instruments');
+                localStorage.removeItem('models');
+
+                console.log('Redirecting to homepage...'); // Debug log
+                // Show brief message and redirect
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 500);
+
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Logout failed. Please try again.');
+
+                // Reset button state
+                const logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.textContent = 'Logout';
+                    logoutBtn.disabled = false;
+                }
+            }
+        }
+
+        // Make logout function globally available immediately
+        window.logout = logout;
+        console.log('Logout function assigned to window:', typeof window.logout); // Debug log
+
+        // Back navigation function
+        function goBack() {
+            console.log('Back button clicked'); // Debug log
+            try {
+                const referrer = document.referrer;
+                console.log('Referrer:', referrer); // Debug log
+
+                // Check if user came from dashboard
+                if (referrer && referrer.includes('/dashboard')) {
+                    console.log('Navigating back to dashboard'); // Debug log
+                    window.location.href = '/dashboard';
+                } else if (referrer && referrer.includes(window.location.origin)) {
+                    // If referrer is from same domain, use browser back
+                    console.log('Using browser back navigation'); // Debug log
+                    window.history.back();
+                } else {
+                    // Default fallback - go to dashboard
+                    console.log('Using default navigation to dashboard'); // Debug log
+                    window.location.href = '/dashboard';
+                }
+            } catch (error) {
+                console.error('Back navigation error:', error);
+                // Fallback to dashboard on any error
+                window.location.href = '/dashboard';
+            }
+        }
+
+        // Make goBack function globally available
+        window.goBack = goBack;
+
         // Check authentication
         function checkAuth() {
             const token = localStorage.getItem('token');
@@ -243,7 +357,6 @@
 
             try {
                 const userData = JSON.parse(user);
-                document.getElementById('userEmail').textContent = userData.email;
                 document.getElementById('currentEmail').value = userData.email;
                 return userData;
             } catch (error) {
@@ -254,44 +367,6 @@
             }
         }
 
-        // Logout function
-        function logout() {
-            try {
-                // Show loading state
-                const logoutBtn = document.querySelector('button[onclick="logout()"]');
-                if (logoutBtn) {
-                    logoutBtn.textContent = 'Logging out...';
-                    logoutBtn.disabled = true;
-                }
-
-                // Clear authentication data
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-
-                // Clear any cached data
-                localStorage.removeItem('instruments');
-                localStorage.removeItem('models');
-
-                // Show brief message and redirect
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 500);
-
-            } catch (error) {
-                console.error('Logout error:', error);
-                alert('Logout failed. Please try again.');
-
-                // Reset button state
-                const logoutBtn = document.querySelector('button[onclick="logout()"]');
-                if (logoutBtn) {
-                    logoutBtn.textContent = 'Logout';
-                    logoutBtn.disabled = false;
-                }
-            }
-        }
-
-        // Make logout function globally available
-        window.logout = logout;
 
         // Show error message
         function showError(message) {
@@ -372,7 +447,6 @@
                         const user = JSON.parse(localStorage.getItem('user'));
                         user.email = newEmail;
                         localStorage.setItem('user', JSON.stringify(user));
-                        document.getElementById('userEmail').textContent = newEmail;
                         document.getElementById('currentEmail').value = newEmail;
                     }
 
@@ -471,6 +545,26 @@
 
         // Initialize profile page
         window.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, setting up buttons...'); // Debug log
+
+            // Attach logout event listener
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', logout);
+                console.log('Logout event listener attached successfully'); // Debug log
+            } else {
+                console.error('Logout button not found!'); // Debug log
+            }
+
+            // Attach back button event listener
+            const backBtn = document.getElementById('backBtn');
+            if (backBtn) {
+                backBtn.addEventListener('click', goBack);
+                console.log('Back button event listener attached successfully'); // Debug log
+            } else {
+                console.error('Back button not found!'); // Debug log
+            }
+
             const userData = checkAuth();
             if (userData) {
                 loadProfileData(userData);

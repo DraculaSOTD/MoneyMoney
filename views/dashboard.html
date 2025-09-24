@@ -6,6 +6,7 @@
     <title>Trading Dashboard - Money Money</title>
     <link rel="stylesheet" href="/css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- Header -->
@@ -13,16 +14,13 @@
         <div class="container">
             <nav class="navbar">
                 <div class="logo">MONEY MONEY</div>
-                <ul class="nav-links">
-                    <li><a href="/dashboard" style="color: var(--color-primary-accent);">Dashboard</a></li>
-                    <li><a href="#signals">Signals</a></li>
-                    <li><a href="#analysis">Analysis</a></li>
-                    <li><a href="#models">Models</a></li>
-                </ul>
+                <div class="nav-links">
+                    <a href="/dashboard" class="nav-link active" style="color: var(--color-primary-accent);">Dashboard</a>
+                    <a href="/models" class="nav-link">Models</a>
+                </div>
                 <div class="nav-actions">
-                    <span id="userEmail" style="color: var(--color-text-secondary);"></span>
                     <a href="/profile" class="login-link">Profile</a>
-                    <button onclick="logout()" class="btn btn-outline" style="padding: 8px 20px;">Logout</button>
+                    <button type="button" id="logoutBtn" class="btn btn-outline" style="padding: 8px 20px;">Logout</button>
                 </div>
             </nav>
         </div>
@@ -43,48 +41,147 @@
                 </div>
             </div>
 
-            <!-- Market Overview -->
+            <!-- Trading Analysis -->
             <section style="margin-bottom: 50px;">
-                <h2 style="margin-bottom: 30px;">Market Overview</h2>
-                <div class="grid grid-4-cols">
-                    <div class="card" style="text-align: center;">
-                        <h3 style="color: var(--color-primary-accent);">Active Signals</h3>
-                        <div style="font-size: 2rem; font-weight: 700; margin: 10px 0;">12</div>
-                        <p style="margin: 0; font-size: 0.9rem;">Currently tracking</p>
+                <h2 style="margin-bottom: 30px;">Trading Analysis</h2>
+
+                <!-- Instrument Selection Controls -->
+                <div class="trading-controls" style="display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap;">
+                    <div class="search-container" style="flex: 1; min-width: 250px; position: relative;">
+                        <label for="instrumentSearch" style="display: block; margin-bottom: 8px; color: var(--color-text-secondary); font-size: 0.9rem;">Search Instrument</label>
+                        <input type="text" id="instrumentSearch" placeholder="Search cryptocurrencies, forex..." class="search-input">
+                        <div id="searchDropdown" class="search-dropdown" style="display: none;"></div>
                     </div>
-                    <div class="card" style="text-align: center;">
-                        <h3 style="color: var(--color-primary-accent);">Models Running</h3>
-                        <div style="font-size: 2rem; font-weight: 700; margin: 10px 0;">8</div>
-                        <p style="margin: 0; font-size: 0.9rem;">AI models active</p>
+                    <div class="currency-container" style="min-width: 150px;">
+                        <label for="currencySelect" style="display: block; margin-bottom: 8px; color: var(--color-text-secondary); font-size: 0.9rem;">Pricing Currency</label>
+                        <select id="currencySelect" class="currency-select">
+                            <option value="USD">USD ($)</option>
+                            <option value="EUR">EUR (€)</option>
+                            <option value="GBP">GBP (£)</option>
+                            <option value="JPY">JPY (¥)</option>
+                        </select>
                     </div>
-                    <div class="card" style="text-align: center;">
-                        <h3 style="color: var(--color-primary-accent);">Accuracy</h3>
-                        <div style="font-size: 2rem; font-weight: 700; margin: 10px 0; color: #22c55e;">87%</div>
-                        <p style="margin: 0; font-size: 0.9rem;">Average model accuracy</p>
+                    <div class="instruments-dropdown-container" style="min-width: 200px;">
+                        <label for="instrumentsDropdown" style="display: block; margin-bottom: 8px; color: var(--color-text-secondary); font-size: 0.9rem;">Quick Select</label>
+                        <select id="instrumentsDropdown" class="instruments-dropdown">
+                            <option value="">-- Select Instrument --</option>
+                            <!-- Populated dynamically -->
+                        </select>
                     </div>
-                    <div class="card" style="text-align: center;">
-                        <h3 style="color: var(--color-primary-accent);">Last Update</h3>
-                        <div style="font-size: 1.2rem; font-weight: 700; margin: 10px 0;" id="lastUpdate">--</div>
-                        <p style="margin: 0; font-size: 0.9rem;">Data refresh</p>
+                </div>
+
+                <!-- Price Chart -->
+                <div class="card" style="margin-bottom: 30px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 id="selectedInstrumentTitle" style="margin: 0;">Select an instrument to view chart</h3>
+                        <div class="timeframe-controls">
+                            <button class="timeframe-btn active" data-timeframe="1D">1D</button>
+                            <button class="timeframe-btn" data-timeframe="7D">7D</button>
+                            <button class="timeframe-btn" data-timeframe="1M">1M</button>
+                            <button class="timeframe-btn" data-timeframe="3M">3M</button>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Analysis Toggle System -->
+                <div class="analysis-toggle-container">
+                    <div class="toggle-header" style="display: flex; margin-bottom: 20px; border-bottom: 2px solid var(--color-card-border);">
+                        <button class="toggle-btn" data-tab="analysis">Analysis</button>
+                        <button class="toggle-btn active" data-tab="summary">Analysis Summary</button>
+                        <button class="toggle-btn" data-tab="models">Models</button>
+                    </div>
+
+                    <div class="toggle-content">
+                        <!-- Analysis Tab -->
+                        <div id="analysisTab" class="tab-content" style="display: none;">
+                            <div class="grid grid-3-cols" style="margin-bottom: 20px;">
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">MACD</h4>
+                                    <div id="macdValue" style="font-size: 1.3rem; font-weight: 700; color: #22c55e;">Bullish</div>
+                                    <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 5px;">Signal: 12.4 | MACD: 8.7</div>
+                                </div>
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">Bollinger Bands</h4>
+                                    <div id="bbValue" style="font-size: 1.3rem; font-weight: 700; color: #f59e0b;">Middle</div>
+                                    <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 5px;">Width: 0.04 | Position: 52%</div>
+                                </div>
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">Volume</h4>
+                                    <div id="volumeValue" style="font-size: 1.3rem; font-weight: 700;">High</div>
+                                    <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 5px;">24h: 1.2M | Avg: 850K</div>
+                                </div>
+                            </div>
+                            <div class="grid grid-2-cols">
+                                <div class="card">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 15px;">Market Sentiment</h4>
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Fear & Greed Index:</span>
+                                        <span id="fearGreedValue" style="font-weight: 600; color: #22c55e;">68 (Greed)</span>
+                                    </div>
+                                    <div class="confidence-meter" style="margin: 10px 0;">
+                                        <div class="confidence-fill" style="width: 68%;"></div>
+                                    </div>
+                                    <div style="font-size: 0.8rem; color: var(--color-text-secondary);">Based on volatility, momentum, and social sentiment</div>
+                                </div>
+                                <div class="card">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 15px;">Price Action</h4>
+                                    <div style="margin-bottom: 10px;">
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span>Trend:</span>
+                                            <span style="color: #22c55e;">Uptrend</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span>Pattern:</span>
+                                            <span>Bull Flag</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span>Breakout:</span>
+                                            <span style="color: #f59e0b;">Pending</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Analysis Summary Tab -->
+                        <div id="summaryTab" class="tab-content">
+                            <div class="grid grid-4-cols" id="analysisSummary">
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">Current Price</h4>
+                                    <div id="currentPrice" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                                    <div id="priceChange" style="font-size: 0.9rem; margin-top: 5px;">--</div>
+                                </div>
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">Support Level</h4>
+                                    <div id="supportLevel" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                                    <div style="font-size: 0.9rem; color: var(--color-text-secondary);">Key support</div>
+                                </div>
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">Resistance Level</h4>
+                                    <div id="resistanceLevel" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                                    <div style="font-size: 0.9rem; color: var(--color-text-secondary);">Key resistance</div>
+                                </div>
+                                <div class="card" style="text-align: center;">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">RSI</h4>
+                                    <div id="rsiValue" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                                    <div id="rsiStatus" style="font-size: 0.9rem; margin-top: 5px;">--</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Models Tab -->
+                        <div id="modelsTab" class="tab-content" style="display: none;">
+                            <div class="grid grid-3-cols" id="modelPredictions">
+                                <!-- Model predictions will be loaded dynamically -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
 
-            <!-- Trading Instruments -->
-            <section>
-                <h2 style="margin-bottom: 30px;">Trading Instruments</h2>
-                <div class="instruments-grid" id="instrumentsContainer">
-                    <!-- Instruments will be loaded dynamically -->
-                </div>
-            </section>
-
-            <!-- Models Performance -->
-            <section style="margin-top: 50px;">
-                <h2 style="margin-bottom: 30px;">AI Models Performance</h2>
-                <div class="grid grid-3-cols" id="modelsContainer">
-                    <!-- Models will be loaded dynamically -->
-                </div>
-            </section>
         </div>
     </main>
 
@@ -218,9 +315,736 @@
                 gap: 10px;
             }
         }
+
+        /* Trading Analysis Styles */
+        .search-input {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: var(--color-card-background);
+            border: 2px solid var(--color-card-border);
+            border-radius: var(--btn-border-radius);
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--color-primary-accent);
+            box-shadow: 0 0 0 2px rgba(225, 0, 122, 0.2);
+        }
+
+        .search-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--color-card-background);
+            border: 2px solid var(--color-card-border);
+            border-top: none;
+            border-radius: 0 0 var(--btn-border-radius) var(--btn-border-radius);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        .search-dropdown-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid var(--color-card-border);
+        }
+
+        .search-dropdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-dropdown-item:hover,
+        .search-dropdown-item.selected {
+            background-color: rgba(225, 0, 122, 0.1);
+            color: var(--color-primary-accent);
+        }
+
+        .currency-select {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: var(--color-card-background);
+            border: 2px solid var(--color-card-border);
+            border-radius: var(--btn-border-radius);
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .currency-select:focus {
+            outline: none;
+            border-color: var(--color-primary-accent);
+        }
+
+        .timeframe-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .timeframe-btn {
+            padding: 8px 16px;
+            background: none;
+            border: 2px solid var(--color-card-border);
+            color: var(--color-text-secondary);
+            border-radius: var(--btn-border-radius);
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .timeframe-btn:hover {
+            border-color: var(--color-primary-accent);
+            color: var(--color-primary-accent);
+        }
+
+        .timeframe-btn.active {
+            background-color: var(--color-primary-accent);
+            border-color: var(--color-primary-accent);
+            color: white;
+        }
+
+        .confidence-meter {
+            width: 100%;
+            height: 8px;
+            background-color: var(--color-card-border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .model-prediction-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .model-prediction-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(225, 0, 122, 0.1);
+        }
+
+        .prediction-outcome {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .prediction-outcome.buy {
+            background-color: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .prediction-outcome.sell {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .prediction-outcome.hold {
+            background-color: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        @media (max-width: 768px) {
+            .trading-controls {
+                flex-direction: column;
+                gap: 15px !important;
+            }
+
+            .timeframe-controls {
+                flex-wrap: wrap;
+                gap: 5px;
+            }
+
+            .timeframe-btn {
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+
+            .chart-container {
+                height: 300px !important;
+            }
+
+            .grid-4-cols,
+            .grid-3-cols {
+                grid-template-columns: 1fr !important;
+                gap: 15px;
+            }
+        }
+
+        /* Instruments Dropdown Styling */
+        .instruments-dropdown {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: var(--color-card-background);
+            border: 2px solid var(--color-card-border);
+            border-radius: var(--btn-border-radius);
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .instruments-dropdown:focus {
+            outline: none;
+            border-color: var(--color-primary-accent);
+        }
+
+        .instruments-dropdown option {
+            background-color: var(--color-card-background);
+            color: var(--color-text-primary);
+            padding: 8px;
+        }
+
+        /* Toggle Header Styling */
+        .toggle-header {
+            border-radius: var(--btn-border-radius) var(--btn-border-radius) 0 0;
+            overflow: hidden;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            padding: 12px 20px;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+
+        .toggle-btn:hover {
+            color: var(--color-primary-accent);
+            background-color: rgba(225, 0, 122, 0.05);
+        }
+
+        .toggle-btn.active {
+            color: var(--color-primary-accent);
+            background-color: rgba(225, 0, 122, 0.1);
+            border-bottom-color: var(--color-primary-accent);
+        }
+
+        /* Tab Content Styling */
+        .tab-content {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .analysis-toggle-container {
+            background-color: var(--color-card-background);
+            border: 1px solid var(--color-card-border);
+            border-radius: var(--card-border-radius);
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+
+        .toggle-content {
+            padding: 20px;
+        }
+
+        /* Grid layouts for different tab content */
+        .grid-2-cols {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .toggle-btn {
+                padding: 10px 12px;
+                font-size: 0.9rem;
+            }
+
+            .grid-2-cols {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .toggle-header {
+                flex-direction: column;
+            }
+        }
     </style>
 
     <script>
+        // Logout function - with improved error handling and debug logging
+        function logout() {
+            console.log('Logout function called'); // Debug log
+            try {
+                // Show loading state
+                const logoutBtn = document.getElementById('logoutBtn');
+                console.log('Logout button found:', logoutBtn); // Debug log
+
+                if (logoutBtn) {
+                    logoutBtn.textContent = 'Logging out...';
+                    logoutBtn.disabled = true;
+                }
+
+                // Clear authentication data
+                console.log('Clearing authentication data...'); // Debug log
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+
+                // Clear any cached data
+                localStorage.removeItem('instruments');
+                localStorage.removeItem('models');
+
+                console.log('Redirecting to homepage...'); // Debug log
+                // Show brief message and redirect
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 500);
+
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Logout failed. Please try again.');
+
+                // Reset button state
+                const logoutBtn = document.getElementById('logoutBtn');
+                if (logoutBtn) {
+                    logoutBtn.textContent = 'Logout';
+                    logoutBtn.disabled = false;
+                }
+            }
+        }
+
+        // Make logout function globally available immediately
+        window.logout = logout;
+        console.log('Logout function assigned to window:', typeof window.logout); // Debug log
+
+        // Trading Analysis Functionality
+        let selectedInstrument = null;
+        let selectedCurrency = 'USD';
+        let currentChart = null;
+        let availableInstruments = [];
+
+        // Mock exchange rates (in production, these would come from an API)
+        const exchangeRates = {
+            USD: 1,
+            EUR: 0.85,
+            GBP: 0.73,
+            JPY: 110.0
+        };
+
+        // Generate mock chart data
+        function generateMockChartData(symbol, timeframe) {
+            const dataPoints = timeframe === '1D' ? 24 : timeframe === '7D' ? 7 : timeframe === '1M' ? 30 : 90;
+            const basePrice = selectedInstrument ? selectedInstrument.price : 45000;
+            const labels = [];
+            const data = [];
+
+            for (let i = dataPoints - 1; i >= 0; i--) {
+                let label;
+                const date = new Date();
+
+                if (timeframe === '1D') {
+                    date.setHours(date.getHours() - i);
+                    label = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                } else {
+                    date.setDate(date.getDate() - i);
+                    label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
+
+                labels.push(label);
+
+                // Generate realistic price movement
+                const volatility = 0.02;
+                const randomChange = (Math.random() - 0.5) * 2 * volatility;
+                const price = basePrice * (1 + randomChange * (i / dataPoints));
+                data.push(price);
+            }
+
+            return { labels, data };
+        }
+
+        // Generate mock technical analysis
+        function generateMockAnalysis(instrument) {
+            const price = instrument.price;
+            const support = price * 0.95;
+            const resistance = price * 1.05;
+            const rsi = Math.floor(Math.random() * 100);
+
+            let rsiStatus = 'Neutral';
+            if (rsi < 30) rsiStatus = 'Oversold';
+            else if (rsi > 70) rsiStatus = 'Overbought';
+
+            return {
+                currentPrice: price,
+                priceChange: instrument.change_percent,
+                support,
+                resistance,
+                rsi,
+                rsiStatus
+            };
+        }
+
+        // Generate model predictions
+        function generateModelPredictions(instrument) {
+            const predictions = [
+                {
+                    name: 'Neural Trend Predictor',
+                    description: 'Advanced neural network analysis',
+                    outcome: Math.random() > 0.5 ? 'BUY' : 'SELL',
+                    confidence: Math.floor(Math.random() * 20) + 75, // 75-95%
+                    accuracy: 89.5
+                },
+                {
+                    name: 'Momentum Signal AI',
+                    description: 'Momentum-based trading signals',
+                    outcome: Math.random() > 0.6 ? 'BUY' : Math.random() > 0.3 ? 'SELL' : 'HOLD',
+                    confidence: Math.floor(Math.random() * 25) + 70, // 70-95%
+                    accuracy: 84.3
+                },
+                {
+                    name: 'Risk-Adjusted Portfolio',
+                    description: 'Portfolio optimization model',
+                    outcome: Math.random() > 0.4 ? 'BUY' : 'SELL',
+                    confidence: Math.floor(Math.random() * 15) + 80, // 80-95%
+                    accuracy: 91.7
+                }
+            ];
+
+            return predictions;
+        }
+
+        // Update chart
+        function updateChart(instrument, timeframe = '1D') {
+            const chartData = generateMockChartData(instrument.symbol, timeframe);
+
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.labels,
+                    datasets: [{
+                        label: `${instrument.name} Price (${selectedCurrency})`,
+                        data: chartData.data.map(price => convertCurrency(price, selectedCurrency)),
+                        borderColor: '#E1007A',
+                        backgroundColor: 'rgba(225, 0, 122, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#FFFFFF'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#B0B0B0'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#B0B0B0',
+                                callback: function(value) {
+                                    return getCurrencySymbol(selectedCurrency) + value.toLocaleString();
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Convert currency
+        function convertCurrency(usdPrice, targetCurrency) {
+            return usdPrice / exchangeRates[targetCurrency];
+        }
+
+        // Get currency symbol
+        function getCurrencySymbol(currency) {
+            const symbols = {
+                USD: '$',
+                EUR: '€',
+                GBP: '£',
+                JPY: '¥'
+            };
+            return symbols[currency] || '$';
+        }
+
+        // Update analysis summary
+        function updateAnalysisSummary(instrument) {
+            const analysis = generateMockAnalysis(instrument);
+            const currencySymbol = getCurrencySymbol(selectedCurrency);
+
+            document.getElementById('currentPrice').textContent =
+                currencySymbol + convertCurrency(analysis.currentPrice, selectedCurrency).toLocaleString();
+
+            const changeElement = document.getElementById('priceChange');
+            changeElement.textContent = (analysis.priceChange >= 0 ? '+' : '') + analysis.priceChange.toFixed(2) + '%';
+            changeElement.style.color = analysis.priceChange >= 0 ? '#22c55e' : '#ef4444';
+
+            document.getElementById('supportLevel').textContent =
+                currencySymbol + convertCurrency(analysis.support, selectedCurrency).toLocaleString();
+
+            document.getElementById('resistanceLevel').textContent =
+                currencySymbol + convertCurrency(analysis.resistance, selectedCurrency).toLocaleString();
+
+            document.getElementById('rsiValue').textContent = analysis.rsi.toFixed(0);
+
+            const rsiStatusElement = document.getElementById('rsiStatus');
+            rsiStatusElement.textContent = analysis.rsiStatus;
+            if (analysis.rsi < 30) rsiStatusElement.style.color = '#22c55e';
+            else if (analysis.rsi > 70) rsiStatusElement.style.color = '#ef4444';
+            else rsiStatusElement.style.color = '#f59e0b';
+        }
+
+        // Update model predictions
+        function updateModelPredictions(instrument) {
+            const predictions = generateModelPredictions(instrument);
+            const container = document.getElementById('modelPredictions');
+
+            container.innerHTML = predictions.map(prediction => `
+                <div class="card model-prediction-card">
+                    <div class="prediction-outcome ${prediction.outcome.toLowerCase()}">
+                        ${prediction.outcome}
+                    </div>
+                    <h4 style="margin: 0 0 10px 0; color: var(--color-text-primary);">${prediction.name}</h4>
+                    <p style="margin: 0 0 15px 0; color: var(--color-text-secondary); font-size: 0.9rem;">
+                        ${prediction.description}
+                    </p>
+                    <div style="margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <span style="font-size: 0.9rem;">Confidence:</span>
+                            <span style="font-weight: 600; color: var(--color-primary-accent);">${prediction.confidence}%</span>
+                        </div>
+                        <div class="confidence-meter">
+                            <div class="confidence-fill" style="width: ${prediction.confidence}%"></div>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--color-text-secondary);">
+                        Model Accuracy: ${prediction.accuracy}%
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Search functionality
+        function setupSearch() {
+            const searchInput = document.getElementById('instrumentSearch');
+            const dropdown = document.getElementById('searchDropdown');
+
+            searchInput.addEventListener('input', function() {
+                const query = this.value.toLowerCase();
+                if (query.length < 1) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+
+                const filtered = availableInstruments.filter(instrument =>
+                    instrument.name.toLowerCase().includes(query) ||
+                    instrument.symbol.toLowerCase().includes(query)
+                );
+
+                if (filtered.length > 0) {
+                    dropdown.innerHTML = filtered.slice(0, 5).map(instrument => `
+                        <div class="search-dropdown-item" data-symbol="${instrument.symbol}">
+                            <strong>${instrument.name}</strong> (${instrument.symbol})
+                            <div style="font-size: 0.8rem; color: var(--color-text-secondary);">
+                                ${instrument.category.charAt(0).toUpperCase() + instrument.category.slice(1)}
+                            </div>
+                        </div>
+                    `).join('');
+                    dropdown.style.display = 'block';
+                } else {
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            // Handle dropdown clicks
+            dropdown.addEventListener('click', function(e) {
+                const item = e.target.closest('.search-dropdown-item');
+                if (item) {
+                    const symbol = item.dataset.symbol;
+                    const instrument = availableInstruments.find(i => i.symbol === symbol);
+                    selectInstrument(instrument);
+                    searchInput.value = `${instrument.name} (${instrument.symbol})`;
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            // Hide dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.search-container')) {
+                    dropdown.style.display = 'none';
+                }
+            });
+        }
+
+        // Select instrument
+        function selectInstrument(instrument) {
+            selectedInstrument = instrument;
+            document.getElementById('selectedInstrumentTitle').textContent =
+                `${instrument.name} (${instrument.symbol})`;
+
+            updateChart(instrument);
+            updateAnalysisSummary(instrument);
+
+            // Always update model predictions when instrument is selected
+            updateModelPredictions(instrument);
+        }
+
+        // Setup timeframe controls
+        function setupTimeframeControls() {
+            document.querySelectorAll('.timeframe-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+
+                    if (selectedInstrument) {
+                        updateChart(selectedInstrument, this.dataset.timeframe);
+                    }
+                });
+            });
+        }
+
+        // Setup currency selector
+        function setupCurrencySelector() {
+            document.getElementById('currencySelect').addEventListener('change', function() {
+                selectedCurrency = this.value;
+                if (selectedInstrument) {
+                    updateChart(selectedInstrument, document.querySelector('.timeframe-btn.active').dataset.timeframe);
+                    updateAnalysisSummary(selectedInstrument);
+                }
+            });
+        }
+
+        // Setup instruments dropdown
+        function setupInstrumentsDropdown() {
+            populateInstrumentsDropdown();
+
+            document.getElementById('instrumentsDropdown').addEventListener('change', function() {
+                const selectedSymbol = this.value;
+                if (selectedSymbol) {
+                    const instrument = availableInstruments.find(i => i.symbol === selectedSymbol);
+                    if (instrument) {
+                        selectInstrument(instrument);
+                        // Update search input to show selection
+                        document.getElementById('instrumentSearch').value = `${instrument.name} (${instrument.symbol})`;
+                    }
+                }
+            });
+        }
+
+        // Populate instruments dropdown with categories
+        function populateInstrumentsDropdown() {
+            const dropdown = document.getElementById('instrumentsDropdown');
+
+            if (availableInstruments.length === 0) {
+                return; // Will be called again when instruments are loaded
+            }
+
+            // Group instruments by category
+            const crypto = availableInstruments.filter(i => i.category === 'crypto');
+            const forex = availableInstruments.filter(i => i.category === 'forex');
+
+            let optionsHTML = '<option value="">-- Select Instrument --</option>';
+
+            if (crypto.length > 0) {
+                optionsHTML += '<optgroup label="Cryptocurrency">';
+                crypto.forEach(instrument => {
+                    optionsHTML += `<option value="${instrument.symbol}">${instrument.name} (${instrument.symbol})</option>`;
+                });
+                optionsHTML += '</optgroup>';
+            }
+
+            if (forex.length > 0) {
+                optionsHTML += '<optgroup label="Forex">';
+                forex.forEach(instrument => {
+                    optionsHTML += `<option value="${instrument.symbol}">${instrument.name} (${instrument.symbol})</option>`;
+                });
+                optionsHTML += '</optgroup>';
+            }
+
+            dropdown.innerHTML = optionsHTML;
+        }
+
+        // Setup tab switching
+        function setupTabSwitching() {
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const targetTab = this.dataset.tab;
+                    switchTab(targetTab);
+                });
+            });
+        }
+
+        // Get currently active tab
+        function getCurrentActiveTab() {
+            const activeBtn = document.querySelector('.toggle-btn.active');
+            return activeBtn ? activeBtn.dataset.tab : null;
+        }
+
+        // Switch to specific tab
+        function switchTab(tabName) {
+            // Update button states
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+            // Hide all tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+
+            // Show selected tab content
+            const tabMap = {
+                'analysis': 'analysisTab',
+                'summary': 'summaryTab',
+                'models': 'modelsTab'
+            };
+
+            document.getElementById(tabMap[tabName]).style.display = 'block';
+
+            // Update models if switching to models tab and instrument is selected
+            if (tabName === 'models' && selectedInstrument) {
+                updateModelPredictions(selectedInstrument);
+            }
+        }
+
         // Check authentication
         function checkAuth() {
             const token = localStorage.getItem('token');
@@ -233,7 +1057,6 @@
 
             try {
                 const userData = JSON.parse(user);
-                document.getElementById('userEmail').textContent = userData.email;
                 return true;
             } catch (error) {
                 localStorage.removeItem('token');
@@ -243,47 +1066,10 @@
             }
         }
 
-        // Logout function
-        function logout() {
-            try {
-                // Show loading state
-                const logoutBtn = document.querySelector('button[onclick="logout()"]');
-                if (logoutBtn) {
-                    logoutBtn.textContent = 'Logging out...';
-                    logoutBtn.disabled = true;
-                }
 
-                // Clear authentication data
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
 
-                // Clear any cached data
-                localStorage.removeItem('instruments');
-                localStorage.removeItem('models');
-
-                // Show brief message and redirect
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 500);
-
-            } catch (error) {
-                console.error('Logout error:', error);
-                alert('Logout failed. Please try again.');
-
-                // Reset button state
-                const logoutBtn = document.querySelector('button[onclick="logout()"]');
-                if (logoutBtn) {
-                    logoutBtn.textContent = 'Logout';
-                    logoutBtn.disabled = false;
-                }
-            }
-        }
-
-        // Make logout function globally available
-        window.logout = logout;
-
-        // Load trading instruments
-        async function loadInstruments() {
+        // Load instruments data for search and dropdown
+        async function loadInstrumentsData() {
             try {
                 const token = localStorage.getItem('token');
                 const response = await fetch('/api/instruments', {
@@ -297,172 +1083,43 @@
                 }
 
                 const instruments = await response.json();
-                displayInstruments(instruments);
+                availableInstruments = instruments; // Store for search functionality
+                populateInstrumentsDropdown(); // Populate dropdown when instruments are loaded
             } catch (error) {
-                console.error('Error loading instruments:', error);
-                document.getElementById('instrumentsContainer').innerHTML = `
-                    <div class="card" style="grid-column: 1 / -1; text-align: center;">
-                        <p style="color: var(--color-text-secondary);">Failed to load instruments. Please refresh the page.</p>
-                    </div>
-                `;
+                console.error('Error loading instruments data:', error);
             }
-        }
-
-        // Display instruments
-        function displayInstruments(instruments) {
-            const container = document.getElementById('instrumentsContainer');
-            container.innerHTML = '';
-
-            instruments.forEach(instrument => {
-                const card = document.createElement('div');
-                card.className = 'instrument-card';
-
-                const priceChangeClass = instrument.change >= 0 ? 'up' : 'down';
-                const priceChangeIcon = instrument.change >= 0 ? '▲' : '▼';
-                const signalClass = instrument.signal === 'BUY' ? 'buy' : 'sell';
-
-                card.innerHTML = `
-                    <div class="instrument-header">
-                        <div>
-                            <div class="instrument-symbol">${instrument.symbol}</div>
-                            <div class="instrument-name">${instrument.name}</div>
-                        </div>
-                        <div class="live-indicator" title="Live Data"></div>
-                    </div>
-
-                    <div style="margin: 20px 0;">
-                        <div class="price ${priceChangeClass}" style="font-size: 1.5rem; margin-bottom: 5px;">
-                            $${instrument.price}
-                        </div>
-                        <div class="price-change ${priceChangeClass}">
-                            ${priceChangeIcon} ${Math.abs(instrument.change)}%
-                        </div>
-                    </div>
-
-                    <div class="signals">
-                        <span class="signal ${signalClass}">${instrument.signal}</span>
-                        <span class="signal" style="background: rgba(225, 0, 122, 0.2); color: var(--color-primary-accent);">
-                            AI Confidence: ${instrument.confidence}%
-                        </span>
-                    </div>
-
-                    <div class="signal-indicators">
-                        <div class="signal-item">
-                            <span>Entry Point:</span>
-                            <span style="color: var(--color-primary-accent);">$${instrument.entryPoint}</span>
-                        </div>
-                        <div class="signal-item">
-                            <span>Take Profit:</span>
-                            <span style="color: #22c55e;">$${instrument.takeProfit}</span>
-                        </div>
-                        <div class="signal-item">
-                            <span>Stop Loss:</span>
-                            <span style="color: #ef4444;">$${instrument.stopLoss}</span>
-                        </div>
-                    </div>
-
-                    <div class="model-accuracy">
-                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 5px;">
-                            <span>Model Accuracy:</span>
-                            <span>${instrument.modelAccuracy}%</span>
-                        </div>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" style="width: ${instrument.modelAccuracy}%"></div>
-                        </div>
-                    </div>
-                `;
-
-                container.appendChild(card);
-            });
-        }
-
-        // Load AI models
-        async function loadModels() {
-            try {
-                const token = localStorage.getItem('token');
-                const response = await fetch('/api/models', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to load models');
-                }
-
-                const models = await response.json();
-                displayModels(models);
-            } catch (error) {
-                console.error('Error loading models:', error);
-            }
-        }
-
-        // Display models
-        function displayModels(models) {
-            const container = document.getElementById('modelsContainer');
-            container.innerHTML = '';
-
-            models.forEach(model => {
-                const accuracyClass = model.accuracy >= 80 ? 'accuracy-high' :
-                                    model.accuracy >= 65 ? 'accuracy-medium' : 'accuracy-low';
-
-                const card = document.createElement('div');
-                card.className = 'card model-card';
-                card.innerHTML = `
-                    <h3>${model.name}</h3>
-                    <div class="model-accuracy ${accuracyClass}">${model.accuracy}%</div>
-                    <p style="margin-bottom: 15px;">${model.description}</p>
-
-                    <div style="text-align: left;">
-                        <div class="signal-item">
-                            <span>Backtesting Period:</span>
-                            <span>${model.backtestPeriod}</span>
-                        </div>
-                        <div class="signal-item">
-                            <span>Total Trades:</span>
-                            <span>${model.totalTrades}</span>
-                        </div>
-                        <div class="signal-item">
-                            <span>Win Rate:</span>
-                            <span style="color: #22c55e;">${model.winRate}%</span>
-                        </div>
-                        <div class="signal-item">
-                            <span>Last Updated:</span>
-                            <span>${model.lastUpdated}</span>
-                        </div>
-                    </div>
-                `;
-
-                container.appendChild(card);
-            });
-        }
-
-        // Update last refresh time
-        function updateLastRefreshTime() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true
-            });
-            document.getElementById('lastUpdate').textContent = timeString;
         }
 
         // Auto-refresh data
         function startAutoRefresh() {
             setInterval(() => {
-                loadInstruments();
-                updateLastRefreshTime();
+                // Auto-refresh can be enabled here if needed
             }, 30000); // Refresh every 30 seconds
         }
 
         // Initialize dashboard
         window.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, setting up logout button...'); // Debug log
+
+            // Attach logout event listener
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', logout);
+                console.log('Logout event listener attached successfully'); // Debug log
+            } else {
+                console.error('Logout button not found!'); // Debug log
+            }
+
             if (checkAuth()) {
-                updateLastRefreshTime();
-                loadInstruments();
-                loadModels();
+                loadInstrumentsData();
                 startAutoRefresh();
+
+                // Initialize trading analysis
+                setupSearch();
+                setupTimeframeControls();
+                setupCurrencySelector();
+                setupInstrumentsDropdown();
+                setupTabSwitching();
             }
         });
     </script>

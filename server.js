@@ -136,6 +136,10 @@ app.get('/profile', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'profile.html'));
 });
 
+app.get('/models', (req, res) => {
+    res.sendFile(path.join(__dirname, 'views', 'models.html'));
+});
+
 // API Routes
 // User registration
 app.post('/api/auth/signup', async (req, res) => {
