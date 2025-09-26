@@ -37,17 +37,18 @@
 
             <!-- Signup Form -->
             <form id="signupForm" class="auth-form-content" style="display: none;">
-                <h2>Create Account</h2>
+                <h2>Unlock endless possibilities in the world of Trading</h2>
+                <p style="color: var(--color-text-secondary); margin-bottom: 25px; text-align: center; font-size: 0.95rem;">Join thousands of traders accessing professional-grade analysis without brokerage fees</p>
                 <div id="signupError" class="error-message" style="display: none;"></div>
 
                 <div class="form-group">
                     <label for="signupEmail">Email Address</label>
-                    <input type="email" id="signupEmail" name="email" placeholder="Enter your email" required>
+                    <input type="email" id="signupEmail" name="email" placeholder="Enter your trading email" required>
                 </div>
 
                 <div class="form-group">
                     <label for="signupPassword">Password</label>
-                    <input type="password" id="signupPassword" name="password" placeholder="Create a password" required minlength="6">
+                    <input type="password" id="signupPassword" name="password" placeholder="Create a secure password" required minlength="6">
                 </div>
 
                 <div class="form-group">
@@ -62,7 +63,7 @@
                     </label>
                 </div>
 
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin: 20px 0;">Create Account</button>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin: 20px 0;">Start Trading Analysis</button>
 
                 <div class="auth-switch">
                     <span>Already have an account? </span>
@@ -109,19 +110,160 @@
             width: auto !important;
             margin: 0;
         }
+
+        .auth-switch button {
+            background: none;
+            border: none;
+            color: var(--color-primary-accent);
+            cursor: pointer;
+            text-decoration: none;
+            font-size: inherit;
+            font-family: inherit;
+            padding: 0;
+            transition: all 0.2s ease;
+        }
+
+        .auth-switch button:hover {
+            text-decoration: underline;
+            opacity: 0.8;
+        }
+
+        .auth-switch button:active {
+            transform: scale(0.98);
+        }
+
+        /* Form transition animations */
+        .auth-form-content {
+            animation: fadeIn 0.4s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+        }
+
+        /* Form highlight effect */
+        .form-highlight {
+            box-shadow: 0 0 20px rgba(225, 0, 122, 0.2);
+            transition: box-shadow 0.5s ease;
+        }
     </style>
 
     <script>
+        // Check URL parameters to determine which form to show
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            const regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            const results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        }
+
         function switchToSignup() {
-            document.getElementById('loginForm').style.display = 'none';
-            document.getElementById('signupForm').style.display = 'block';
-            clearErrors();
+            const loginForm = document.getElementById('loginForm');
+            const signupForm = document.getElementById('signupForm');
+            const authForm = document.querySelector('.auth-form');
+
+            // Fade out current form
+            loginForm.style.animation = 'fadeOut 0.2s ease-in-out';
+
+            setTimeout(() => {
+                loginForm.style.display = 'none';
+                signupForm.style.display = 'block';
+                signupForm.style.animation = 'fadeIn 0.4s ease-in-out';
+
+                // Add highlight effect
+                authForm.classList.add('form-highlight');
+                setTimeout(() => authForm.classList.remove('form-highlight'), 500);
+
+                // Scroll to top of form
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                // Focus email field after animation
+                setTimeout(() => {
+                    document.getElementById('signupEmail').focus();
+                }, 400);
+
+                clearErrors();
+            }, 200);
+
+            // Update URL without page reload
+            if (window.history.pushState) {
+                window.history.pushState({}, '', '/auth?mode=signup');
+            }
         }
 
         function switchToLogin() {
-            document.getElementById('signupForm').style.display = 'none';
-            document.getElementById('loginForm').style.display = 'block';
-            clearErrors();
+            const signupForm = document.getElementById('signupForm');
+            const loginForm = document.getElementById('loginForm');
+            const authForm = document.querySelector('.auth-form');
+
+            // Fade out current form
+            signupForm.style.animation = 'fadeOut 0.2s ease-in-out';
+
+            setTimeout(() => {
+                signupForm.style.display = 'none';
+                loginForm.style.display = 'block';
+                loginForm.style.animation = 'fadeIn 0.4s ease-in-out';
+
+                // Add highlight effect
+                authForm.classList.add('form-highlight');
+                setTimeout(() => authForm.classList.remove('form-highlight'), 500);
+
+                // Scroll to top of form
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                // Focus email field after animation
+                setTimeout(() => {
+                    document.getElementById('loginEmail').focus();
+                }, 400);
+
+                clearErrors();
+            }, 200);
+
+            // Update URL without page reload
+            if (window.history.pushState) {
+                window.history.pushState({}, '', '/auth?mode=login');
+            }
+        }
+
+        // Initialize correct form based on URL parameter
+        function initializeForm() {
+            const mode = getUrlParameter('mode');
+            const loginForm = document.getElementById('loginForm');
+            const signupForm = document.getElementById('signupForm');
+
+            if (mode === 'login') {
+                // Show login form without animation on initial load
+                signupForm.style.display = 'none';
+                loginForm.style.display = 'block';
+                setTimeout(() => {
+                    document.getElementById('loginEmail').focus();
+                }, 100);
+            } else {
+                // Default to signup form (mode=signup or no parameter)
+                loginForm.style.display = 'none';
+                signupForm.style.display = 'block';
+                setTimeout(() => {
+                    document.getElementById('signupEmail').focus();
+                }, 100);
+            }
         }
 
         function clearErrors() {
@@ -148,6 +290,12 @@
                 return;
             }
 
+            // Show loading state
+            const loginButton = document.querySelector('#loginForm button[type="submit"]');
+            const originalLoginText = loginButton.innerHTML;
+            loginButton.innerHTML = 'Signing in...';
+            loginButton.disabled = true;
+
             try {
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
@@ -162,12 +310,30 @@
                 if (response.ok) {
                     localStorage.setItem('token', data.token);
                     localStorage.setItem('user', JSON.stringify(data.user));
-                    window.location.href = '/dashboard';
+
+                    // Show success message before redirect
+                    const loginButton = document.querySelector('#loginForm button[type="submit"]');
+                    loginButton.innerHTML = 'Welcome back! Redirecting...';
+                    loginButton.disabled = true;
+                    loginButton.style.backgroundColor = '#22c55e';
+
+                    // Redirect to dashboard after brief delay
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 1000);
                 } else {
-                    showError('loginError', data.message || 'Login failed');
+                    showError('loginError', data.message || 'Login failed. Please check your credentials.');
+                    // Reset button state on failure
+                    loginButton.innerHTML = originalLoginText;
+                    loginButton.disabled = false;
+                    loginButton.style.backgroundColor = '';
                 }
             } catch (error) {
                 showError('loginError', 'Network error. Please try again.');
+                // Reset button state on error
+                loginButton.innerHTML = originalLoginText;
+                loginButton.disabled = false;
+                loginButton.style.backgroundColor = '';
             }
         });
 
@@ -201,6 +367,12 @@
                 return;
             }
 
+            // Show loading state
+            const signupButton = document.querySelector('#signupForm button[type="submit"]');
+            const originalSignupText = signupButton.innerHTML;
+            signupButton.innerHTML = 'Creating Account...';
+            signupButton.disabled = true;
+
             try {
                 const response = await fetch('/api/auth/signup', {
                     method: 'POST',
@@ -215,12 +387,30 @@
                 if (response.ok) {
                     localStorage.setItem('token', data.token);
                     localStorage.setItem('user', JSON.stringify(data.user));
-                    window.location.href = '/dashboard';
+
+                    // Show success message before redirect
+                    const signupButton = document.querySelector('#signupForm button[type="submit"]');
+                    signupButton.innerHTML = 'Account Created! Redirecting...';
+                    signupButton.disabled = true;
+                    signupButton.style.backgroundColor = '#22c55e';
+
+                    // Redirect to dashboard after brief delay
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 1500);
                 } else {
-                    showError('signupError', data.message || 'Signup failed');
+                    showError('signupError', data.message || 'Account creation failed. Please try again.');
+                    // Reset button state on failure
+                    signupButton.innerHTML = originalSignupText;
+                    signupButton.disabled = false;
+                    signupButton.style.backgroundColor = '';
                 }
             } catch (error) {
                 showError('signupError', 'Network error. Please try again.');
+                // Reset button state on error
+                signupButton.innerHTML = originalSignupText;
+                signupButton.disabled = false;
+                signupButton.style.backgroundColor = '';
             }
         });
 
@@ -252,6 +442,11 @@
             if (this.value && !validateEmail(this.value)) {
                 this.style.borderColor = 'rgba(239, 68, 68, 0.5)';
             }
+        });
+
+        // Initialize the form when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeForm();
         });
     </script>
 </body>
