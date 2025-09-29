@@ -43,10 +43,10 @@ const authLimiter = rateLimit({
 app.use('/api/auth/', authLimiter);
 
 // JWT Secret (in production, use environment variable)
-const JWT_SECRET = process.env.JWT_SECRET || 'moneymoney_jwt_secret_key_2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'tradingdashboard_jwt_secret_key_2024';
 
 // Database initialization
-const db = new sqlite3.Database('./database/moneymoney.db', (err) => {
+const db = new sqlite3.Database('./database/tradingdashboard.db', (err) => {
     if (err) {
         console.error('Error opening database:', err.message);
     } else {
@@ -552,5 +552,5 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Money Money server running on http://localhost:${PORT}`);
+    console.log(`TradingDashboard AI server running on http://localhost:${PORT}`);
 });

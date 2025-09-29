@@ -1,6 +1,6 @@
-# Money Money - Trading Signals Platform
+# TradingDashboard AI - Trading Signals Platform
 
-A professional trading signals and market analysis platform designed for crypto and forex traders. Money Money provides AI-powered trading signals, trend analysis, and model accuracy metrics to help traders make informed decisions.
+A professional trading signals and market analysis platform designed for crypto and forex traders. TradingDashboard AI provides AI-powered trading signals, trend analysis, and model accuracy metrics to help traders make informed decisions.
 
 ## Features
 
@@ -199,4 +199,4 @@ For support and questions, please contact the development team.
 
 ---
 
-**Money Money** - Empowering traders with AI-driven market insights.
+**TradingDashboard AI** - Empowering traders with AI-driven market insights.

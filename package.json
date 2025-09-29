@@ -1,5 +1,5 @@
 {
-  "name": "money-money-signals",
+  "name": "tradingdashboard-ai",
   "version": "1.0.0",
   "description": "Trading signals and analysis platform for crypto and forex instruments",
   "main": "server.js",

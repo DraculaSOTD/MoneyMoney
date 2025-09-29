@@ -42,20 +42,39 @@ body {
     font-family: var(--font-family-main);
     background-color: var(--color-background);
     color: var(--color-text-primary);
+    /* Enhanced background: Purple gradients + Stardust texture + Starfield layers */
     background-image:
-        radial-gradient(ellipse at 50% 0%, #3a23503d, transparent 70%),
-        radial-gradient(circle at 23% 17%, rgba(255,255,255,0.25) 0.4px, transparent 1px),
-        radial-gradient(circle at 73% 84%, rgba(255,255,255,0.15) 0.6px, transparent 1.2px),
-        radial-gradient(circle at 11% 92%, rgba(255,255,255,0.2) 0.3px, transparent 0.8px),
-        radial-gradient(circle at 89% 31%, rgba(255,255,255,0.18) 0.5px, transparent 1.1px),
-        radial-gradient(circle at 34% 56%, rgba(255,255,255,0.12) 0.4px, transparent 0.9px),
-        radial-gradient(circle at 67% 8%, rgba(255,255,255,0.22) 0.7px, transparent 1.4px),
-        radial-gradient(circle at 45% 78%, rgba(255,255,255,0.14) 0.3px, transparent 0.7px),
-        radial-gradient(circle at 91% 63%, rgba(255,255,255,0.19) 0.5px, transparent 1px),
-        radial-gradient(circle at 7% 41%, rgba(255,255,255,0.16) 0.4px, transparent 0.9px),
-        radial-gradient(circle at 58% 25%, rgba(255,255,255,0.21) 0.6px, transparent 1.3px);
-    background-size: 100% 100%, 127px 83px, 173px 139px, 97px 151px, 211px 67px, 134px 198px, 89px 113px, 156px 74px, 203px 187px, 71px 129px, 185px 96px;
-    background-position: center, 15px 23px, 47px 8px, 91px 156px, 34px 78px, 123px 41px, 67px 199px, 178px 29px, 12px 134px, 203px 67px, 88px 182px;
+        /* Starfield layers on top */
+        radial-gradient(circle at 23% 17%, rgba(255,255,255,0.2) 0.4px, transparent 1px),
+        radial-gradient(circle at 73% 84%, rgba(255,255,255,0.12) 0.6px, transparent 1.2px),
+        radial-gradient(circle at 11% 92%, rgba(255,255,255,0.16) 0.3px, transparent 0.8px),
+        radial-gradient(circle at 89% 31%, rgba(255,255,255,0.14) 0.5px, transparent 1.1px),
+        radial-gradient(circle at 34% 56%, rgba(255,255,255,0.1) 0.4px, transparent 0.9px),
+        radial-gradient(circle at 67% 8%, rgba(255,255,255,0.18) 0.7px, transparent 1.4px),
+        radial-gradient(circle at 45% 78%, rgba(255,255,255,0.11) 0.3px, transparent 0.7px),
+        radial-gradient(circle at 91% 63%, rgba(255,255,255,0.15) 0.5px, transparent 1px),
+        radial-gradient(circle at 7% 41%, rgba(255,255,255,0.13) 0.4px, transparent 0.9px),
+        radial-gradient(circle at 58% 25%, rgba(255,255,255,0.17) 0.6px, transparent 1.3px),
+        /* Original stardust texture for depth */
+        url('https://www.transparenttextures.com/patterns/stardust.png'),
+        /* Enhanced purple gradient layers */
+        radial-gradient(ellipse at 50% 0%, rgba(58, 35, 80, 0.6), transparent 70%),
+        radial-gradient(ellipse at 30% 100%, rgba(76, 29, 149, 0.3), transparent 60%),
+        radial-gradient(ellipse at 70% 100%, rgba(138, 43, 226, 0.2), transparent 50%);
+    background-size:
+        127px 83px, 173px 139px, 97px 151px, 211px 67px, 134px 198px, 89px 113px, 156px 74px, 203px 187px, 71px 129px, 185px 96px,
+        300px 300px,
+        100% 100%, 100% 100%, 100% 100%;
+    background-position:
+        15px 23px, 47px 8px, 91px 156px, 34px 78px, 123px 41px, 67px 199px, 178px 29px, 12px 134px, 203px 67px, 88px 182px,
+        0 0,
+        center, center, center;
+    background-repeat: repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, no-repeat, no-repeat, no-repeat;
+    /* GPU acceleration for smooth rendering */
+    will-change: auto;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    contain: layout style paint;
     line-height: 1.6;
 }
 
@@ -423,7 +442,7 @@ a:hover {
 /* Footer */
 .main-footer {
     padding: 60px 0;
-    background-color: #000; /* Footer is often slightly different */
+    /* background-color: #000; -- Removed to inherit body gradient */
     border-top: 1px solid var(--color-card-border);
 }
 
