@@ -49,142 +49,122 @@
             <div class="features-content">
                 <div class="features-text">
                     <h2>Powerful Trading Dashboard</h2>
-                    <p>TradingDashboard AI provides institutional-grade trading analysis without requiring a brokerage account. Access real-time market data, technical indicators, and AI-powered insights for informed decision making.</p>
-                    <p>Our comprehensive platform offers advanced charting tools, multi-timeframe analysis, and AI model predictions for crypto and forex instruments. Get the professional edge you need to analyze markets like a pro.</p>
+                    <p>TradingDashboard AI provides trading analysis without requiring a brokerage account. Access market data, technical indicators, and AI-powered insights for informed decision making and the professional edge you need to analyze markets like a pro.</p>
+                    <p>TradingDashboard AI does not offer and/or constitue financial or trading advice and/or signals.</p>
                 </div>
                 <div class="features-visual">
-                    <div class="dashboard-preview demo-dashboard full-demo" style="width: 100%; max-width: 600px;">
-                        <!-- Demo Mode Badge -->
-                        <div class="demo-badge" style="position: absolute; top: 10px; right: 10px; background: rgba(225, 0, 122, 0.9); color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.75rem; z-index: 10;">
+                    <div id="firstDemoContainer" style="width: 100%; max-width: 600px; background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 16px; padding: 30px; backdrop-filter: blur(10px); position: relative;">
+                        <!-- Demo Badge -->
+                        <div style="position: absolute; top: 15px; right: 15px; background: rgba(225, 0, 122, 0.9); color: white; padding: 6px 16px; border-radius: 20px; font-size: 0.75rem; z-index: 10;">
                             DEMO MODE
                         </div>
 
-                        <!-- Trading Controls -->
-                        <div class="trading-controls" style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 150px;">
-                                <label style="display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 0.75rem;">Instrument</label>
-                                <select class="demo-select restricted" style="width: 100%; padding: 8px; background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 4px; color: var(--color-text-primary); font-size: 0.85rem;">
-                                    <option>Bitcoin (BTC/USD)</option>
-                                </select>
+                        <!-- Chart Section -->
+                        <div style="margin-bottom: 25px;">
+                            <h3 style="margin: 0 0 8px 0; font-size: 1.2rem;">Bitcoin (BTC/USD)</h3>
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
+                                <span style="font-size: 1.8rem; font-weight: 700;">$43,250.75</span>
+                                <span style="color: #22c55e; font-weight: 600; font-size: 1rem;">+2.45%</span>
                             </div>
-                            <div style="min-width: 100px;">
-                                <label style="display: block; margin-bottom: 5px; color: var(--color-text-secondary); font-size: 0.75rem;">Currency</label>
-                                <select class="demo-select restricted" style="width: 100%; padding: 8px; background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 4px; color: var(--color-text-primary); font-size: 0.85rem;">
-                                    <option>USD ($)</option>
-                                </select>
+                            <div style="background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 8px; padding: 20px;">
+                                <canvas id="demoChart1" style="max-height: 280px;"></canvas>
                             </div>
                         </div>
 
-                        <!-- Price Chart -->
-                        <div class="card" style="margin-bottom: 20px; padding: 15px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                                <div>
-                                    <h3 style="margin: 0; font-size: 1.1rem;">Bitcoin (BTC/USD)</h3>
-                                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
-                                        <span style="font-size: 1.5rem; font-weight: 700;">$43,250.75</span>
-                                        <span style="color: #22c55e; font-weight: 600;">+2.45%</span>
-                                    </div>
-                                </div>
-                                <div class="timeframe-controls" style="display: flex; gap: 5px;">
-                                    <button class="timeframe-btn restricted active" data-timeframe="1D" style="padding: 6px 12px; font-size: 0.75rem;">1D</button>
-                                    <button class="timeframe-btn restricted" data-timeframe="7D" style="padding: 6px 12px; font-size: 0.75rem;">7D</button>
-                                    <button class="timeframe-btn restricted" data-timeframe="1M" style="padding: 6px 12px; font-size: 0.75rem;">1M</button>
-                                    <button class="timeframe-btn restricted" data-timeframe="3M" style="padding: 6px 12px; font-size: 0.75rem;">3M</button>
-                                </div>
-                            </div>
-                            <div style="position: relative; height: 250px;">
-                                <canvas id="demoChart1"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Analysis Toggle System -->
-                        <div class="analysis-toggle-container" style="background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 8px; overflow: hidden;">
-                            <div class="toggle-header" style="display: flex; border-bottom: 2px solid var(--color-card-border);">
-                                <button class="demo-toggle-btn" data-tab="analysis" style="flex: 1; padding: 10px; background: none; border: none; color: var(--color-text-secondary); cursor: pointer; font-size: 0.85rem;">Analysis</button>
-                                <button class="demo-toggle-btn active" data-tab="summary" style="flex: 1; padding: 10px; background: none; border: none; color: var(--color-primary-accent); cursor: pointer; font-size: 0.85rem;">Analysis Summary</button>
-                                <button class="demo-toggle-btn" data-tab="models" style="flex: 1; padding: 10px; background: none; border: none; color: var(--color-text-secondary); cursor: pointer; font-size: 0.85rem;">Models</button>
+                        <!-- Tab Navigation -->
+                        <div style="background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 12px; overflow: hidden; margin-bottom: 20px;">
+                            <div style="display: flex; border-bottom: 2px solid var(--color-card-border);">
+                                <button id="tab1-analysis" class="first-demo-tab" data-tab="analysis">
+                                    Analysis
+                                </button>
+                                <button id="tab1-summary" class="first-demo-tab active" data-tab="summary">
+                                    Summary
+                                </button>
+                                <button id="tab1-models" class="first-demo-tab" data-tab="models">
+                                    Models
+                                </button>
                             </div>
 
-                            <div class="toggle-content" style="padding: 15px;">
+                            <!-- Tab Content -->
+                            <div style="padding: 20px;">
                                 <!-- Analysis Tab -->
-                                <div class="demo-tab-content" data-tab="analysis" style="display: none;">
-                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">MACD</h5>
-                                            <div style="font-size: 1rem; font-weight: 700; color: #22c55e;">Bullish</div>
-                                            <div style="font-size: 0.7rem; color: var(--color-text-secondary);">12.4 | 8.7</div>
+                                <div id="content1-analysis" class="first-demo-content" style="display: none;">
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">MACD</h5>
+                                            <div style="font-size: 1.1rem; font-weight: 700; color: #22c55e;">Bullish</div>
+                                            <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 4px;">12.4 | 8.7</div>
                                         </div>
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">Bollinger</h5>
-                                            <div style="font-size: 1rem; font-weight: 700; color: #f59e0b;">Middle</div>
-                                            <div style="font-size: 0.7rem; color: var(--color-text-secondary);">52%</div>
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">Bollinger</h5>
+                                            <div style="font-size: 1.1rem; font-weight: 700; color: #f59e0b;">Middle</div>
+                                            <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 4px;">52%</div>
                                         </div>
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">Volume</h5>
-                                            <div style="font-size: 1rem; font-weight: 700;">High</div>
-                                            <div style="font-size: 0.7rem; color: var(--color-text-secondary);">1.2M</div>
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">Volume</h5>
+                                            <div style="font-size: 1.1rem; font-weight: 700;">High</div>
+                                            <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 4px;">1.2M</div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Analysis Summary Tab -->
-                                <div class="demo-tab-content" data-tab="summary">
-                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">Current Price</h5>
-                                            <div style="font-size: 1.2rem; font-weight: 700;">$43,250</div>
-                                            <div style="font-size: 0.7rem; color: #22c55e;">+2.45%</div>
+                                <!-- Summary Tab -->
+                                <div id="content1-summary" class="first-demo-content">
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">Current Price</h5>
+                                            <div style="font-size: 1.3rem; font-weight: 700;">$43,250</div>
+                                            <div style="font-size: 0.8rem; color: #22c55e; margin-top: 4px;">+2.45%</div>
                                         </div>
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">RSI</h5>
-                                            <div style="font-size: 1.2rem; font-weight: 700; color: #f59e0b;">65</div>
-                                            <div style="font-size: 0.7rem; color: var(--color-text-secondary);">Neutral</div>
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">RSI</h5>
+                                            <div style="font-size: 1.3rem; font-weight: 700; color: #f59e0b;">65</div>
+                                            <div style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: 4px;">Neutral</div>
                                         </div>
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">Support</h5>
-                                            <div style="font-size: 1.2rem; font-weight: 700;">$42,000</div>
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">Support</h5>
+                                            <div style="font-size: 1.3rem; font-weight: 700;">$42,000</div>
                                         </div>
-                                        <div class="card" style="text-align: center; padding: 10px;">
-                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 5px 0; font-size: 0.8rem;">Resistance</h5>
-                                            <div style="font-size: 1.2rem; font-weight: 700;">$45,000</div>
+                                        <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <h5 style="color: var(--color-primary-accent); margin: 0 0 8px 0; font-size: 0.85rem;">Resistance</h5>
+                                            <div style="font-size: 1.3rem; font-weight: 700;">$45,000</div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <!-- Models Tab -->
-                                <div class="demo-tab-content" data-tab="models" style="display: none;">
-                                    <div style="display: grid; gap: 10px;">
-                                        <div class="card" style="padding: 10px;">
-                                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                <div>
-                                                    <h5 style="margin: 0; font-size: 0.85rem;">Neural Trend Predictor</h5>
-                                                    <div style="font-size: 0.7rem; color: var(--color-text-secondary);">89.5% accuracy</div>
-                                                </div>
-                                                <span style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">BUY</span>
+                                <div id="content1-models" class="first-demo-content" style="display: none;">
+                                    <div style="display: grid; gap: 12px;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <div>
+                                                <h5 style="margin: 0; font-size: 0.9rem; font-weight: 600;">Neural Trend Predictor</h5>
+                                                <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 2px;">89.5% accuracy</div>
                                             </div>
+                                            <span style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 5px 12px; border-radius: 14px; font-size: 0.75rem; font-weight: 600;">BUY</span>
                                         </div>
-                                        <div class="card" style="padding: 10px;">
-                                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                <div>
-                                                    <h5 style="margin: 0; font-size: 0.85rem;">Momentum Signal AI</h5>
-                                                    <div style="font-size: 0.7rem; color: var(--color-text-secondary);">84.3% accuracy</div>
-                                                </div>
-                                                <span style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">BUY</span>
+                                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <div>
+                                                <h5 style="margin: 0; font-size: 0.9rem; font-weight: 600;">Momentum Signal AI</h5>
+                                                <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 2px;">84.3% accuracy</div>
                                             </div>
+                                            <span style="background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 5px 12px; border-radius: 14px; font-size: 0.75rem; font-weight: 600;">BUY</span>
                                         </div>
-                                        <div class="card" style="padding: 10px;">
-                                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                <div>
-                                                    <h5 style="margin: 0; font-size: 0.85rem;">Risk-Adjusted Portfolio</h5>
-                                                    <div style="font-size: 0.7rem; color: var(--color-text-secondary);">91.7% accuracy</div>
-                                                </div>
-                                                <span style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">HOLD</span>
+                                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                                            <div>
+                                                <h5 style="margin: 0; font-size: 0.9rem; font-weight: 600;">Risk-Adjusted Portfolio</h5>
+                                                <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top: 2px;">91.7% accuracy</div>
                                             </div>
+                                            <span style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 5px 12px; border-radius: 14px; font-size: 0.75rem; font-weight: 600;">HOLD</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- CTA Button -->
+                        <a href="/auth?mode=signup" class="btn btn-primary" style="display: block; text-align: center; text-decoration: none; padding: 14px; font-size: 1rem;">
+                            Start Trading Analysis →
+                        </a>
                     </div>
                 </div>
             </div>
@@ -350,8 +330,8 @@
                     </div>
                 </div>
                 <div class="team-text">
-                    <h2>INDEPENDENT TRADING ANALYSIS</h2>
-                    <p>Access professional-grade trading tools and AI-powered market analysis without the commitment or fees of traditional brokerages. Make informed decisions with institutional-quality data.</p>
+                    <h2>Power up your trading Analysis with our AI models</h2>
+                    <p>We build, train and maintain AI models for you so you can focus on trading and investing.</p>
                     <div class="team-actions">
                         <a href="/auth?mode=signup" class="btn btn-primary">Start Analysis</a>
                         <a href="#pricing" class="btn btn-outline">View Pricing →</a>
@@ -521,26 +501,6 @@
             box-shadow: 0 10px 30px rgba(225, 0, 122, 0.3);
         }
 
-        .demo-dashboard::after {
-            content: "Click to start free demo";
-            position: absolute;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(225, 0, 122, 0.9);
-            color: white;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            pointer-events: none;
-        }
-
-        .demo-dashboard:hover::after {
-            opacity: 1;
-        }
-
         .demo-header {
             display: flex;
             justify-content: space-between;
@@ -560,6 +520,33 @@
             background-color: var(--color-primary-accent);
             border-color: var(--color-primary-accent);
             color: white;
+        }
+
+        /* First Demo Dashboard Tab Styles */
+        .first-demo-tab {
+            flex: 1;
+            padding: 12px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            font-family: var(--font-family-main);
+            pointer-events: auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .first-demo-tab:hover {
+            color: var(--color-primary-accent);
+            background: rgba(225, 0, 122, 0.05);
+        }
+
+        .first-demo-tab.active {
+            color: var(--color-primary-accent);
+            border-bottom: 2px solid var(--color-primary-accent);
         }
     </style>
 
@@ -691,31 +678,44 @@
                 });
             }
 
-            // Tab switching functionality for first dashboard
-            const toggleBtns1 = document.querySelectorAll('.demo-toggle-btn');
-            const tabContents1 = document.querySelectorAll('.demo-tab-content');
+            // Tab switching functionality for NEW first dashboard
+            const firstDemoTabs = document.querySelectorAll('.first-demo-tab');
+            const firstDemoContents = document.querySelectorAll('.first-demo-content');
 
-            toggleBtns1.forEach(btn => {
-                btn.addEventListener('click', function(e) {
-                    e.stopPropagation(); // Prevent triggering dashboard click-to-signup
+            console.log('First Demo: Found', firstDemoTabs.length, 'tab buttons');
+            console.log('First Demo: Found', firstDemoContents.length, 'content sections');
+
+            firstDemoTabs.forEach((tab, index) => {
+                console.log('Attaching click handler to tab', index, tab.getAttribute('data-tab'));
+
+                tab.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
                     const targetTab = this.getAttribute('data-tab');
+                    console.log('Tab clicked:', targetTab);
 
-                    // Update button states
-                    toggleBtns1.forEach(b => {
-                        b.classList.remove('active');
-                        b.style.color = 'var(--color-text-secondary)';
+                    // Remove active state from all tabs
+                    firstDemoTabs.forEach(t => {
+                        t.classList.remove('active');
                     });
+
+                    // Add active state to clicked tab
                     this.classList.add('active');
-                    this.style.color = 'var(--color-primary-accent)';
 
-                    // Show/hide content
-                    tabContents1.forEach(content => {
-                        if (content.getAttribute('data-tab') === targetTab) {
-                            content.style.display = 'block';
-                        } else {
-                            content.style.display = 'none';
-                        }
+                    // Hide all content
+                    firstDemoContents.forEach(content => {
+                        content.style.display = 'none';
                     });
+
+                    // Show target content
+                    const targetContent = document.getElementById('content1-' + targetTab);
+                    if (targetContent) {
+                        targetContent.style.display = 'block';
+                        console.log('Showing content:', 'content1-' + targetTab);
+                    } else {
+                        console.error('Content not found:', 'content1-' + targetTab);
+                    }
                 });
             });
 
@@ -770,7 +770,7 @@
                 element.title = 'Sign up for full access';
             });
 
-            // Add hover effects for demo dashboards
+            // Add hover effects for demo dashboards (second dashboard only)
             document.querySelectorAll('.full-demo').forEach(demo => {
                 demo.addEventListener('mouseenter', function() {
                     this.style.transform = 'translateY(-2px)';
@@ -783,23 +783,8 @@
                 });
             });
 
-            // Add click-to-signup for first dashboard only (features section)
-            const firstDashboard = document.querySelector('.features-visual .full-demo');
-            if (firstDashboard) {
-                firstDashboard.addEventListener('click', function(e) {
-                    // Check if the click target is a tab button or its child
-                    const isTabButton = e.target.closest('.demo-toggle-btn');
-
-                    // If not clicking on a tab button, show signup modal
-                    if (!isTabButton) {
-                        showUpgradeModal();
-                    }
-                });
-
-                // Add visual indication that dashboard is clickable
-                firstDashboard.style.cursor = 'pointer';
-                firstDashboard.title = 'Click to explore full dashboard features';
-            }
+            // Note: First dashboard now has a built-in "Start Trading Analysis" button
+            // No need for complex click handlers - the button links directly to signup
         });
     </script>
 </body>

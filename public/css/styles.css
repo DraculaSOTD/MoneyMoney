@@ -626,11 +626,16 @@ a:hover {
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .features-content,
-    .team-content {
+    .features-content {
         grid-template-columns: 1fr;
         gap: 40px;
         text-align: center;
+    }
+
+    /* Keep team-content as 2-column layout on all screen sizes */
+    .team-content {
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
     }
 
     .stats {
@@ -682,5 +687,11 @@ a:hover {
 
     .instruments-grid {
         grid-template-columns: 1fr;
+    }
+
+    /* Keep team-content as 2-column layout even on mobile */
+    .team-content {
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
     }
 }
