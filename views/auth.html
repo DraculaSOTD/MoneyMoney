@@ -31,7 +31,7 @@
 
                 <div class="auth-switch">
                     <span>Don't have an account? </span>
-                    <button type="button" onclick="switchToSignup()">Sign up here</button>
+                    <button type="button" id="switchToSignupBtn">Sign up here</button>
                 </div>
             </form>
 
@@ -67,7 +67,7 @@
 
                 <div class="auth-switch">
                     <span>Already have an account? </span>
-                    <button type="button" onclick="switchToLogin()">Login here</button>
+                    <button type="button" id="switchToLoginBtn">Login here</button>
                 </div>
             </form>
         </div>
@@ -447,6 +447,18 @@
         // Initialize the form when page loads
         document.addEventListener('DOMContentLoaded', function() {
             initializeForm();
+
+            // Attach event listeners to toggle buttons
+            const switchToSignupBtn = document.getElementById('switchToSignupBtn');
+            const switchToLoginBtn = document.getElementById('switchToLoginBtn');
+
+            if (switchToSignupBtn) {
+                switchToSignupBtn.addEventListener('click', switchToSignup);
+            }
+
+            if (switchToLoginBtn) {
+                switchToLoginBtn.addEventListener('click', switchToLogin);
+            }
         });
     </script>
 </body>

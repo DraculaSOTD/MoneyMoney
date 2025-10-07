@@ -36,12 +36,14 @@ Generated based on the provided landing page design.
 
 html {
     scroll-behavior: smooth;
+    min-height: 100vh;
 }
 
 body {
     font-family: var(--font-family-main);
     background-color: var(--color-background);
     color: var(--color-text-primary);
+    min-height: 100vh;
     /* Enhanced background: Purple gradients + Stardust texture + Starfield layers */
     background-image:
         /* Starfield layers on top */
@@ -70,6 +72,7 @@ body {
         0 0,
         center, center, center;
     background-repeat: repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, repeat, no-repeat, no-repeat, no-repeat;
+    background-attachment: fixed;
     /* GPU acceleration for smooth rendering */
     will-change: auto;
     transform: translateZ(0);

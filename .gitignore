@@ -106,5 +106,9 @@ ehthumbs.db
 Thumbs.db
 desktop.ini
 
+# Windows reserved filenames (cannot be tracked by Git)
+nul
+NUL
+
 # Claude Code specific
 .claude/
