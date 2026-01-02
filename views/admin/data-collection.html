@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Collection - Admin Panel</title>
+    <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/admin/css/admin.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar (same as dashboard) -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Trading Platform</h2>
+                <span class="admin-badge">ADMIN</span>
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="/admin/dashboard" class="nav-link">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/admin/data-collection" class="nav-link active">
+                            <i class="fas fa-cloud-download-alt"></i>
+                            <span>Data Collection</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/admin/data-management" class="nav-link">
+                            <i class="fas fa-database"></i>
+                            <span>Data Management</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/admin/models" class="nav-link">
+                            <i class="fas fa-brain"></i>
+                            <span>ML Models</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Data Collection</h1>
+                <p>Collect historical market data for symbols</p>
+            </div>
+
+            <!-- Stepper -->
+            <div class="stepper-container glassmorphism">
+                <div class="stepper">
+                    <div class="step active" data-step="0">
+                        <div class="step-number">1</div>
+                        <div class="step-label">Select Symbol</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="1">
+                        <div class="step-number">2</div>
+                        <div class="step-label">Configure</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="2">
+                        <div class="step-number">3</div>
+                        <div class="step-label">Collect Data</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="3">
+                        <div class="step-number">4</div>
+                        <div class="step-label">Complete</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Alert -->
+            <div id="errorAlert" class="alert alert-error" style="display: none;">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="errorMessage"></span>
+                <button onclick="document.getElementById('errorAlert').style.display='none'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Step Content -->
+            <div class="step-content-container glassmorphism">
+                <!-- Step 0: Select Symbol -->
+                <div id="step-0" class="step-content active">
+                    <h2>Select Trading Symbol</h2>
+                    <p class="step-description">Choose the symbol you want to collect historical data for. Data will be fetched at 1-minute intervals.</p>
+
+                    <div class="form-group">
+                        <label for="profileSelect">Trading Profile</label>
+                        <select id="profileSelect" class="form-control">
+                            <option value="">Loading profiles...</option>
+                        </select>
+                    </div>
+
+                    <div id="selectedProfileInfo" class="profile-info-card" style="display: none;">
+                        <h3>Selected Symbol Information</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Symbol</span>
+                                <span class="info-value" id="infoSymbol">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Type</span>
+                                <span class="info-value" id="infoType">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Exchange</span>
+                                <span class="info-value" id="infoExchange">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Current Data</span>
+                                <span class="info-value" id="infoHasData">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 1: Configure -->
+                <div id="step-1" class="step-content">
+                    <h2>Configure Data Collection</h2>
+                    <p class="step-description">Set the parameters for data collection. All data is collected at 1-minute intervals.</p>
+
+                    <div class="config-card">
+                        <h3><i class="fas fa-calendar-alt"></i> Data Collection Period</h3>
+                        <div class="info-box">
+                            <p style="font-size: 1.1em; margin-bottom: 0.5rem;">
+                                <strong id="profileLookbackDays">-</strong> days of historical data
+                            </p>
+                            <p class="text-muted" style="font-size: 0.9em; margin: 0;">
+                                <i class="fas fa-info-circle"></i> Configured in profile settings
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3><i class="fas fa-exchange-alt"></i> Exchange</h3>
+                        <div class="form-group">
+                            <select id="exchangeSelect" class="form-control">
+                                <option value="binance">Binance</option>
+                                <option value="binance_us">Binance US</option>
+                                <option value="coinbase">Coinbase Pro</option>
+                            </select>
+                        </div>
+                        <p class="info-note">
+                            <i class="fas fa-info-circle"></i>
+                            Data interval: <strong>1 minute</strong> (fixed for accurate model training)
+                        </p>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <span><strong>Note:</strong> Data collection will fetch historical 1-minute candles and store them in the database. Timeframe aggregations (5m, 1h, 1D, etc.) will be generated on-demand during training and analysis.</span>
+                    </div>
+                </div>
+
+                <!-- Step 2: Collecting Data -->
+                <div id="step-2" class="step-content">
+                    <h2>Collecting Data</h2>
+                    <p class="step-description">Please wait while we fetch and process historical data for <strong id="collectingSymbol">-</strong></p>
+
+                    <div id="collectionProgress" style="display: none;">
+                        <div class="progress-header">
+                            <h1 class="progress-percentage" id="progressPercent">0%</h1>
+                            <div class="progress-stage">
+                                <i id="stageIcon" class="fas fa-spinner fa-spin"></i>
+                                <span id="stageName">Initializing</span>
+                            </div>
+                        </div>
+
+                        <div class="progress-bar-wrapper">
+                            <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
+                        </div>
+
+                        <div class="stage-indicators">
+                            <div class="stage-card" id="stage-fetching">
+                                <i class="fas fa-cloud-download-alt"></i>
+                                <div>
+                                    <h4>Fetching</h4>
+                                    <p>Downloading from exchange</p>
+                                </div>
+                            </div>
+                            <div class="stage-card" id="stage-preprocessing">
+                                <i class="fas fa-cogs"></i>
+                                <div>
+                                    <h4>Preprocessing</h4>
+                                    <p>Cleaning and validating</p>
+                                </div>
+                            </div>
+                            <div class="stage-card" id="stage-storing">
+                                <i class="fas fa-database"></i>
+                                <div>
+                                    <h4>Storing</h4>
+                                    <p>Saving to database</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="progressInfo" class="alert alert-info" style="display: none;">
+                            <i class="fas fa-info-circle"></i>
+                            <span><strong>Progress:</strong> <span id="recordsProcessed">0</span> records processed</span>
+                        </div>
+                    </div>
+
+                    <div id="initializing" class="initializing-state">
+                        <div class="spinner-large"></div>
+                        <p>Initializing data collection...</p>
+                    </div>
+                </div>
+
+                <!-- Step 3: Complete -->
+                <div id="step-3" class="step-content">
+                    <div class="success-state">
+                        <i class="fas fa-check-circle"></i>
+                        <h2>Data Collection Complete!</h2>
+                        <p>Successfully collected <strong id="totalRecords">0</strong> records for <strong id="completedSymbol">-</strong></p>
+                    </div>
+
+                    <div class="next-steps-card">
+                        <h3><i class="fas fa-lightbulb"></i> Next Steps</h3>
+                        <div class="next-step-item">
+                            <i class="fas fa-brain"></i>
+                            <p>Train machine learning models using the collected data</p>
+                        </div>
+                        <button id="trainModelsBtn" class="btn btn-primary btn-large">
+                            <i class="fas fa-brain"></i>
+                            Train Models Now
+                        </button>
+                    </div>
+
+                    <button id="collectMoreBtn" class="btn btn-secondary">
+                        <i class="fas fa-redo"></i>
+                        Collect More Data
+                    </button>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="step-navigation">
+                <button id="backBtn" class="btn btn-secondary" style="display: none;">
+                    <i class="fas fa-arrow-left"></i>
+                    Back
+                </button>
+                <div style="flex: 1;"></div>
+                <button id="nextBtn" class="btn btn-primary" disabled>
+                    Next
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+                <button id="startCollectionBtn" class="btn btn-primary" style="display: none;">
+                    <i class="fas fa-cloud-download-alt"></i>
+                    Start Collection
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Load Socket.io for WebSocket -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <!-- Load our JavaScript files -->
+    <script src="/admin/js/ui-helpers.js"></script>
+    <script src="/admin/js/api-service.js"></script>
+    <script src="/admin/js/websocket.js"></script>
+    <script src="/admin/js/data-collection.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 260px;
+            background-color: var(--color-card-background);
+            border-right: 1px solid var(--color-card-border);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px 0;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 20px 20px;
+            border-bottom: 1px solid var(--color-card-border);
+            margin-bottom: 20px;
+        }
+
+        .sidebar-header h2 {
+            color: var(--color-text-primary);
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+        }
+
+        .admin-badge {
+            display: inline-block;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin-bottom: 4px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: var(--color-text-primary);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-link:hover {
+            background-color: var(--color-card-background);
+        }
+
+        .nav-link.active {
+            background-color: rgba(225, 0, 122, 0.2);
+            border-left-color: var(--color-primary-accent);
+        }
+
+        .nav-link.active i {
+            color: var(--color-primary-accent);
+        }
+
+        .nav-link i {
+            margin-right: 12px;
+            font-size: 1.2rem;
+            color: var(--color-text-secondary);
+            width: 24px;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: 260px;
+            padding: 30px;
+        }
+
+        .page-header {
+            margin-bottom: 30px;
+        }
+
+        .page-header h1 {
+            color: var(--color-text-primary);
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .page-header p {
+            color: var(--color-text-secondary);
+        }
+
+        /* Stepper Styles */
+        .stepper-container {
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .stepper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--color-card-background);
+            border: 2px solid var(--color-card-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-text-secondary);
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .step.active .step-number {
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            border-color: var(--color-primary-accent);
+            color: white;
+        }
+
+        .step.completed .step-number {
+            background-color: var(--color-success);
+            border-color: var(--color-success);
+            color: white;
+        }
+
+        .step-label {
+            font-size: 0.85rem;
+            color: var(--color-text-secondary);
+            font-weight: 500;
+        }
+
+        .step.active .step-label {
+            color: var(--color-primary-accent);
+        }
+
+        .step-line {
+            flex: 1;
+            height: 2px;
+            background-color: var(--color-card-border);
+            margin: 0 10px;
+            margin-bottom: 28px;
+        }
+
+        /* Step Content */
+        .step-content-container {
+            padding: 40px;
+            margin-bottom: 30px;
+            min-height: 500px;
+        }
+
+        .step-content {
+            display: none;
+        }
+
+        .step-content.active {
+            display: block;
+        }
+
+        .step-content h2 {
+            color: var(--color-text-primary);
+            margin-bottom: 12px;
+            font-size: 1.75rem;
+        }
+
+        .step-description {
+            color: var(--color-text-secondary);
+            margin-bottom: 30px;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            color: var(--color-text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--color-card-border);
+            border-radius: 8px;
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--color-primary-accent);
+            background-color: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Profile Info Card */
+        .profile-info-card {
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-card-border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 24px;
+        }
+
+        .profile-info-card h3 {
+            color: var(--color-text-primary);
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            color: var(--color-text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .info-value {
+            color: var(--color-text-primary);
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        /* Config Cards */
+        .config-card {
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-card-border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .config-card h3 {
+            color: var(--color-text-primary);
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Slider */
+        .slider-container {
+            padding: 20px 0;
+        }
+
+        .slider {
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--color-card-border);
+            outline: none;
+            margin-bottom: 30px;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            cursor: pointer;
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            cursor: pointer;
+            border: none;
+        }
+
+        .slider-marks {
+            display: flex;
+            justify-content: space-between;
+            margin-top: -20px;
+        }
+
+        .slider-marks span {
+            color: var(--color-text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .slider-info {
+            color: var(--color-text-secondary);
+            margin-top: 16px;
+        }
+
+        .slider-info strong {
+            color: var(--color-text-primary);
+        }
+
+        .info-note {
+            color: var(--color-text-secondary);
+            font-size: 0.9rem;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Alerts */
+        .alert {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert-info {
+            background-color: rgba(138, 43, 226, 0.1);
+            border: 1px solid rgba(138, 43, 226, 0.3);
+            color: var(--color-text-primary);
+        }
+
+        .alert-error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--color-error);
+            color: var(--color-error);
+        }
+
+        .alert button {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        /* Progress Styles */
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .progress-percentage {
+            font-size: 3rem;
+            background: linear-gradient(135deg, var(--color-text-primary), var(--color-primary-accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .progress-stage {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.2rem;
+            color: var(--color-text-primary);
+        }
+
+        .progress-bar-wrapper {
+            width: 100%;
+            height: 12px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 40px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        .stage-indicators {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .stage-card {
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-card-border);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+
+        .stage-card.active {
+            opacity: 1;
+            border-color: var(--color-primary-accent);
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.3);
+        }
+
+        .stage-card i {
+            font-size: 2rem;
+            color: var(--color-text-secondary);
+        }
+
+        .stage-card.active i {
+            color: var(--color-primary-accent);
+        }
+
+        .stage-card h4 {
+            color: var(--color-text-primary);
+            margin-bottom: 4px;
+        }
+
+        .stage-card p {
+            color: var(--color-text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .initializing-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 60px 0;
+        }
+
+        .spinner-large {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--color-primary-accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .initializing-state p {
+            color: var(--color-text-secondary);
+            margin-top: 20px;
+        }
+
+        /* Success State */
+        .success-state {
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .success-state i {
+            font-size: 5rem;
+            color: var(--color-success);
+            margin-bottom: 20px;
+        }
+
+        .success-state h2 {
+            color: var(--color-text-primary);
+            margin-bottom: 12px;
+        }
+
+        .success-state p {
+            color: var(--color-text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .next-steps-card {
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-card-border);
+            border-radius: 12px;
+            padding: 30px;
+            margin: 40px 0 20px 0;
+        }
+
+        .next-steps-card h3 {
+            color: var(--color-text-primary);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .next-step-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding: 16px;
+            background-color: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+        }
+
+        .next-step-item i {
+            font-size: 1.5rem;
+            color: var(--color-primary-accent);
+        }
+
+        .next-step-item p {
+            color: var(--color-text-secondary);
+            margin: 0;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(225, 0, 122, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: transparent;
+            border: 2px solid var(--color-primary-accent);
+            color: var(--color-primary-accent);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--color-primary-accent);
+            color: white;
+        }
+
+        .btn-large {
+            width: 100%;
+            padding: 16px 32px;
+            font-size: 1.1rem;
+        }
+
+        .step-navigation {
+            display: flex;
+            gap: 12px;
+            padding: 0 40px 40px 40px;
+        }
+
+        /* Animations */
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        /* Notification Styles */
+        .notification {
+            animation: slideInRight 0.3s ease;
+        }
+
+        .notification-close {
+            background: none;
+            border: none;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            padding: 0;
+            margin-left: auto;
+        }
+
+        .notification-close:hover {
+            color: var(--color-text-primary);
+        }
+    </style>
+</body>
+</html>

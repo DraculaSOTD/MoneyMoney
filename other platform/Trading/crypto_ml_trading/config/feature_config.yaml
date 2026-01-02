@@ -1,0 +1,282 @@
+# Feature Engineering Configuration
+# Comprehensive configuration for technical indicators and features
+
+# Technical Indicators Configuration
+technical_indicators:
+  # Moving Averages
+  moving_averages:
+    enabled: true
+    types:
+      sma:
+        enabled: true
+        periods: [12, 26, 50, 100, 200]
+      ema:
+        enabled: true
+        periods: [12, 26]
+      wma:
+        enabled: false
+        periods: [20]
+      vwma:
+        enabled: true
+        periods: [20]
+  
+  # MACD Configuration
+  macd:
+    enabled: true
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+  
+  # RSI Configuration
+  rsi:
+    enabled: true
+    periods: [14]
+    overbought: 70
+    oversold: 30
+  
+  # Stochastic Oscillator
+  stochastic:
+    enabled: true
+    period: 14
+    smooth_k: 3
+    smooth_d: 3
+    overbought: 80
+    oversold: 20
+  
+  # Bollinger Bands
+  bollinger_bands:
+    enabled: true
+    period: 20
+    num_std: 2
+    features:
+      - bands  # Upper, Middle, Lower bands
+      - width  # Band width
+      - percent  # Position within bands
+  
+  # ATR (Average True Range)
+  atr:
+    enabled: true
+    periods: [14]
+    include_prev: true  # Include ATR_prev for stop loss calculations
+  
+  # Parabolic SAR
+  parabolic_sar:
+    enabled: true
+    start_af: 0.02
+    increment_af: 0.02
+    max_af: 0.20
+  
+  # ADX (Average Directional Index)
+  adx:
+    enabled: true
+    period: 14
+    include_di: true  # Include +DI and -DI
+    trend_strength:
+      weak: 25
+      strong: 50
+      very_strong: 75
+  
+  # Ichimoku Cloud
+  ichimoku:
+    enabled: true
+    conversion_period: 9
+    base_period: 26
+    lead_span_b_period: 52
+    displacement: 26
+  
+  # Momentum Indicators
+  momentum:
+    enabled: true
+    periods: [14]
+  
+  # Volume Indicators
+  volume_indicators:
+    cmf:  # Chaikin Money Flow
+      enabled: true
+      period: 20
+    obv:  # On Balance Volume
+      enabled: false
+    vwap:  # Volume Weighted Average Price
+      enabled: false
+  
+  # Support and Resistance
+  support_resistance:
+    enabled: true
+    lookback_window: 20
+    pivot_points:
+      enabled: true
+      method: standard  # standard, fibonacci, camarilla
+    dynamic_levels:
+      enabled: true
+      sensitivity: 0.02  # 2% threshold
+
+# Pattern Detection Configuration
+pattern_detection:
+  # Divergences
+  divergences:
+    enabled: true
+    indicators: [MACD, RSI]
+    lookback_window: 5
+    confirmation_required: false
+  
+  # Elliott Waves
+  elliott_waves:
+    enabled: true
+    method: basic  # basic, advanced
+    window: 5
+    min_wave_size: 0.01  # 1% minimum price movement
+  
+  # Chart Patterns (future enhancement)
+  chart_patterns:
+    enabled: false
+    patterns:
+      - head_and_shoulders
+      - double_top
+      - double_bottom
+      - triangle
+      - flag
+
+# Feature Engineering Configuration
+feature_engineering:
+  # Price Features
+  price_features:
+    enabled: true
+    features:
+      - returns
+      - log_returns
+      - price_range
+      - price_change
+      - price_position
+      - typical_price
+      - weighted_price
+  
+  # Volume Features
+  volume_features:
+    enabled: true
+    features:
+      - volume_change
+      - volume_ma_ratio
+      - volume_profile
+      - dollar_volume
+  
+  # Time-based Features
+  time_features:
+    enabled: true
+    features:
+      - hour
+      - day_of_week
+      - day_of_month
+      - month
+      - is_weekend
+      - is_market_open
+      - session  # asian, european, american
+  
+  # Lag Features
+  lag_features:
+    enabled: true
+    variables: [returns, volume, volatility]
+    lags: [1, 2, 3, 5, 10, 20]
+  
+  # Rolling Statistics
+  rolling_statistics:
+    enabled: true
+    windows: [5, 10, 20, 50]
+    statistics:
+      - mean
+      - std
+      - skew
+      - kurtosis
+      - min
+      - max
+  
+  # Interaction Features
+  interaction_features:
+    enabled: false
+    interactions:
+      - [price, volume]
+      - [rsi, macd]
+      - [volatility, volume]
+
+# Data Processing Configuration
+data_processing:
+  # Missing Data Handling
+  missing_data:
+    method: forward_fill  # forward_fill, interpolate, drop
+    max_missing_pct: 0.05
+  
+  # Outlier Detection
+  outlier_detection:
+    enabled: true
+    method: iqr  # iqr, z_score, isolation_forest
+    threshold: 3.0
+    action: clip  # clip, remove, keep
+  
+  # Feature Scaling
+  scaling:
+    method: standard  # standard, minmax, robust
+    exclude_columns: [timestamp, symbol]
+    per_feature_config:
+      price_columns: minmax
+      volume_columns: robust
+      indicators: none  # Most indicators are already normalized
+  
+  # Feature Selection
+  feature_selection:
+    enabled: false
+    method: importance  # importance, correlation, mutual_info
+    top_n_features: 50
+    correlation_threshold: 0.95
+
+# Trading Decision Configuration
+trading_decisions:
+  # Rule-based Signals
+  rule_based:
+    enabled: true
+    min_indicators_agreement: 3
+    confidence_weighting: true
+    
+  # Signal Generation
+  signals:
+    buy_conditions:
+      - {indicator: RSI_14, operator: '<', value: 30}
+      - {indicator: MACD, operator: '>', compare_to: Signal_Line}
+      - {indicator: close, operator: '<', compare_to: Lower_Band}
+      - {indicator: Parabolic_SAR, operator: '<', compare_to: low}
+      - {indicator: '%K', operator: '>', compare_to: '%D'}
+      - {indicator: CMF_20, operator: '>', value: 0}
+    
+    sell_conditions:
+      - {indicator: RSI_14, operator: '>', value: 70}
+      - {indicator: MACD, operator: '<', compare_to: Signal_Line}
+      - {indicator: close, operator: '>', compare_to: Upper_Band}
+      - {indicator: Parabolic_SAR, operator: '>', compare_to: high}
+      - {indicator: '%K', operator: '<', compare_to: '%D'}
+      - {indicator: CMF_20, operator: '<', value: 0}
+  
+  # Confidence Scoring
+  confidence_scoring:
+    enabled: true
+    weights:
+      trend_indicators: 0.3
+      momentum_indicators: 0.3
+      volume_indicators: 0.2
+      pattern_indicators: 0.2
+
+# Performance Optimization
+performance:
+  # Parallel Processing
+  parallel_processing:
+    enabled: true
+    n_jobs: -1  # Use all available cores
+  
+  # Caching
+  caching:
+    enabled: true
+    cache_dir: ./cache/features
+    ttl_hours: 24
+  
+  # Memory Optimization
+  memory_optimization:
+    chunk_size: 10000
+    dtype_optimization: true
+    sparse_features: false

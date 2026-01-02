@@ -297,6 +297,7 @@
             loginButton.disabled = true;
 
             try {
+                // Call Node.js backend for admin authentication (sets session cookie)
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: {
@@ -308,8 +309,11 @@
                 const data = await response.json();
 
                 if (response.ok) {
+                    // Node.js backend returns: { token, user, role, message }
                     localStorage.setItem('token', data.token);
+                    localStorage.setItem('adminToken', data.token);  // Save as adminToken for admin panel
                     localStorage.setItem('user', JSON.stringify(data.user));
+                    localStorage.setItem('role', data.role);
 
                     // Show success message before redirect
                     const loginButton = document.querySelector('#loginForm button[type="submit"]');
@@ -317,10 +321,15 @@
                     loginButton.disabled = true;
                     loginButton.style.backgroundColor = '#22c55e';
 
-                    // Redirect to dashboard after brief delay
+                    // Redirect based on user role
                     setTimeout(() => {
-                        window.location.href = '/dashboard';
-                    }, 1000);
+                        const role = localStorage.getItem('role');
+                        if (role === 'admin') {
+                            window.location.href = '/admin';
+                        } else {
+                            window.location.href = '/dashboard';
+                        }
+                    }, 800);
                 } else {
                     showError('loginError', data.message || 'Login failed. Please check your credentials.');
                     // Reset button state on failure

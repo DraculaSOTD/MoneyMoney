@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful - TradingDashboard AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            padding: 50px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .success-icon {
+            width: 100px;
+            height: 100px;
+            background: #28a745;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease-out;
+        }
+
+        .success-icon i {
+            color: white;
+            font-size: 50px;
+        }
+
+        @keyframes scaleIn {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 1.1em;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .status {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 30px 0;
+        }
+
+        .status p {
+            margin: 0;
+            font-size: 0.95em;
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">
+            <i class="fas fa-check"></i>
+        </div>
+
+        <h1>Payment Successful!</h1>
+
+        <p>
+            Thank you for subscribing to TradingDashboard AI Premium!
+            Your payment has been processed successfully.
+        </p>
+
+        <div class="status">
+            <p id="statusMessage">
+                <span class="loading"></span>
+                Verifying your subscription...
+            </p>
+        </div>
+
+        <a href="/dashboard" class="btn" id="dashboardBtn" style="display: none;">
+            <i class="fas fa-chart-line"></i> Go to Dashboard
+        </a>
+    </div>
+
+    <script>
+        // Get reference from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const reference = urlParams.get('reference');
+
+        // Get auth token
+        function getAuthToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'auth_session') {
+                    return value;
+                }
+            }
+            return localStorage.getItem('token');
+        }
+
+        // Verify payment
+        async function verifyPayment() {
+            try {
+                const token = getAuthToken();
+                if (!token) {
+                    window.location.href = '/auth';
+                    return;
+                }
+
+                if (!reference) {
+                    throw new Error('No payment reference found');
+                }
+
+                const response = await fetch(`/api/subscription/verify/${reference}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('statusMessage').innerHTML =
+                        '<i class="fas fa-check-circle" style="color: #28a745;"></i> Subscription activated successfully!';
+                    document.getElementById('dashboardBtn').style.display = 'inline-block';
+                } else {
+                    document.getElementById('statusMessage').innerHTML =
+                        '<i class="fas fa-exclamation-circle" style="color: #dc3545;"></i> Payment verification failed. Please contact support.';
+                    document.getElementById('statusMessage').style.color = '#dc3545';
+                }
+
+            } catch (error) {
+                console.error('Verification error:', error);
+                document.getElementById('statusMessage').innerHTML =
+                    '<i class="fas fa-exclamation-circle" style="color: #dc3545;"></i> Error verifying payment. Please contact support.';
+                document.getElementById('statusMessage').style.color = '#dc3545';
+            }
+        }
+
+        // Auto-verify on load
+        document.addEventListener('DOMContentLoaded', verifyPayment);
+    </script>
+</body>
+</html>

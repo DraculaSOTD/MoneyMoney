@@ -1,0 +1,235 @@
+# Live Trading System Configuration
+# This configuration enables all live trading features
+
+# Exchange Configuration
+exchanges:
+  binance:
+    enabled: true
+    testnet: true  # Set to false for mainnet
+    rate_limits:
+      orders_per_second: 10
+      requests_per_minute: 1200
+
+# Trading Configuration
+trading:
+  symbols: 
+    - BTCUSDT
+    - ETHUSDT
+    - BNBUSDT
+  base_position_size: 1000  # USD
+  min_confidence: 0.6
+  allow_short: false
+  rebalance_interval: 3600  # seconds
+
+# Risk Management
+risk_management:
+  enabled: true
+  max_position_size: 10000  # USD
+  max_positions: 10
+  max_daily_loss: 1000  # USD
+  max_drawdown: 0.1  # 10%
+  max_total_exposure: 50000  # USD
+  stop_loss_percent: 0.02  # 2%
+  take_profit_percent: 0.05  # 5%
+  position_sizing_method: "kelly"  # kelly, fixed, volatility_adjusted
+
+# Database Configuration
+database:
+  enabled: true
+  url: postgresql://user:password@localhost:5432/trading
+  pool_size: 10
+  echo: false
+
+# Redis Configuration
+redis:
+  enabled: true
+  url: redis://localhost:6379/0
+  ttl: 3600  # seconds
+
+# Alternative Data Sources
+alternative_data:
+  enabled: true
+  twitter:
+    enabled: true
+    keywords_per_symbol: 10
+    min_engagement: 10
+  reddit:
+    enabled: true
+    subreddits:
+      - cryptocurrency
+      - CryptoMarkets
+      - Bitcoin
+      - ethereum
+    min_score: 10
+  news:
+    enabled: true
+    sources:
+      - coindesk
+      - cointelegraph
+      - bloomberg
+      - reuters
+    min_relevance: 0.5
+
+# Monitoring and Alerting
+monitoring:
+  prometheus:
+    enabled: true
+    port: 9090
+  grafana:
+    enabled: false
+    url: http://localhost:3000
+
+alerting:
+  slack:
+    enabled: false
+    # webhook_url set via SLACK_WEBHOOK_URL env var
+  telegram:
+    enabled: true
+    # bot_token and chat_id set via env vars
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    from_email: alerts@tradingbot.com
+    to_emails:
+      - admin@example.com
+  discord:
+    enabled: false
+    # webhook_url set via DISCORD_WEBHOOK_URL env var
+    
+  rules:
+    trade_executed:
+      min_severity: info
+      rate_limit_seconds: 30
+    position_opened:
+      min_severity: info
+      rate_limit_seconds: 60
+    position_closed:
+      min_severity: info
+      rate_limit_seconds: 60
+    risk_limit:
+      min_severity: warning
+      rate_limit_seconds: 300
+    large_drawdown:
+      min_severity: warning
+      rate_limit_seconds: 600
+    connection_lost:
+      min_severity: error
+      rate_limit_seconds: 300
+    system_status:
+      min_severity: error
+      rate_limit_seconds: 300
+
+# ML Model Configuration
+ml:
+  retrain_error_threshold: 0.02
+  retrain_interval_hours: 24
+  min_training_samples: 1000
+  validation_split: 0.2
+  
+  models:
+    arima:
+      enabled: true
+      order: [5, 1, 2]
+    garch:
+      enabled: true
+      p: 1
+      q: 1
+    gru_attention:
+      enabled: true
+      units: 128
+      dropout: 0.2
+    cnn:
+      enabled: true
+      filters: 64
+      kernel_size: 3
+    transformer_tft:
+      enabled: false  # Still in development
+      d_model: 256
+      n_heads: 8
+    ppo:
+      enabled: true
+      learning_rate: 0.0003
+      gamma: 0.99
+    hmm:
+      enabled: true
+      n_states: 3
+    ensemble:
+      enabled: true
+      method: "weighted_average"
+
+# Signal Weights
+signal_weights:
+  ml_prediction: 0.4
+  technical: 0.3
+  sentiment: 0.2
+  regime: 0.1
+
+# Signal Thresholds
+signal_thresholds:
+  strong_buy: 0.8
+  buy: 0.6
+  sell: -0.6
+  strong_sell: -0.8
+
+# Security Configuration
+security:
+  key_provider: environment  # environment, file, keyring, aws_secrets, hashicorp_vault
+  encryption:
+    enabled: true
+    algorithm: AES-256
+  api_tokens:
+    rotate_days: 90
+    min_length: 32
+
+# Data Configuration
+data:
+  kline_interval: 1m
+  history_days: 30
+  buffer_size: 1000
+  real_time:
+    reconnect_interval: 5  # seconds
+    heartbeat_interval: 30  # seconds
+
+# Model Storage
+model_storage:
+  path: models
+  backup_enabled: true
+  backup_interval: 86400  # seconds
+  s3_backup:
+    enabled: false
+    bucket: crypto-ml-models
+    region: us-east-1
+
+# API Configuration
+api:
+  enabled: true
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+    - "*"
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file:
+    enabled: true
+    path: logs/trading.log
+    max_size: 100MB
+    backup_count: 5
+  elasticsearch:
+    enabled: false
+    host: localhost
+    port: 9200
+    index: trading-logs
+
+# System Configuration
+system:
+  timezone: UTC
+  debug_mode: false
+  dry_run: false
+  maintenance_mode: false

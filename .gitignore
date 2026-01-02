@@ -1,3 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
 # Dependencies
 node_modules/
 npm-debug.log*

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription - TradingDashboard AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+        }
+
+        .subscription-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.95;
+        }
+
+        .content {
+            padding: 50px 40px;
+        }
+
+        .status-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 2px solid #e9ecef;
+        }
+
+        .status-active {
+            border-color: #28a745;
+            background: #d4edda;
+        }
+
+        .status-inactive {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .status-section h2 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .status-icon.active {
+            background: #28a745;
+            color: white;
+        }
+
+        .status-icon.inactive {
+            background: #dc3545;
+            color: white;
+        }
+
+        .status-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .status-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .status-label {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+
+        .status-value {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .plan-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .plan-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 16px;
+            padding: 40px;
+            margin: 0 auto 30px;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .plan-price {
+            font-size: 4em;
+            font-weight: 700;
+            margin: 20px 0;
+        }
+
+        .plan-price span {
+            font-size: 0.4em;
+            opacity: 0.9;
+        }
+
+        .plan-features {
+            list-style: none;
+            margin: 30px 0;
+            text-align: left;
+        }
+
+        .plan-features li {
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .plan-features li:last-child {
+            border-bottom: none;
+        }
+
+        .plan-features i {
+            color: #4ade80;
+            font-size: 1.2em;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            margin-left: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .actions {
+            margin-top: 30px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="subscription-card">
+            <div class="header">
+                <h1><i class="fas fa-crown"></i> Subscription</h1>
+                <p>Access premium trading insights and AI-powered analysis</p>
+            </div>
+
+            <div class="content">
+                <!-- Alert messages -->
+                <div id="alert" class="alert"></div>
+
+                <!-- Current Subscription Status -->
+                <div id="statusSection" class="status-section">
+                    <h2>
+                        <span id="statusIcon" class="status-icon">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </span>
+                        Current Status
+                    </h2>
+                    <div id="statusDetails" class="status-details">
+                        <div class="status-item">
+                            <span class="status-label">Status</span>
+                            <span id="statusText" class="status-value">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subscription Plan -->
+                <div id="planSection" class="plan-section">
+                    <div class="plan-card">
+                        <h3 style="font-size: 1.5em; margin-bottom: 10px;">Premium Access</h3>
+                        <div class="plan-price">R200<span>/month</span></div>
+
+                        <ul class="plan-features">
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Access to all trading profiles</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Real-time market data and indicators</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>AI-powered trading signals</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Advanced technical analysis</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Historical data and backtesting</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Sentiment analysis</span>
+                            </li>
+                        </ul>
+
+                        <div id="subscribeButton" class="hidden">
+                            <button class="btn btn-primary" onclick="initializePayment()">
+                                Subscribe Now
+                            </button>
+                        </div>
+
+                        <div id="activeControls" class="actions hidden">
+                            <a href="/dashboard" class="btn btn-primary">
+                                <i class="fas fa-chart-line"></i> Go to Dashboard
+                            </a>
+                            <button class="btn btn-danger" onclick="cancelSubscription()">
+                                Cancel Subscription
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <p>Need help? <a href="mailto:support@tradingdashboard.ai">Contact Support</a></p>
+                    <p style="margin-top: 10px;">
+                        <a href="/dashboard">← Back to Dashboard</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <script>
+        let subscriptionData = null;
+
+        // Get auth token from cookie
+        function getAuthToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'auth_session') {
+                    return value;
+                }
+            }
+
+            // Try localStorage as fallback
+            return localStorage.getItem('token');
+        }
+
+        // Show alert message
+        function showAlert(message, type = 'success') {
+            const alert = document.getElementById('alert');
+            alert.className = `alert alert-${type} show`;
+            alert.textContent = message;
+
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+
+        // Load subscription status
+        async function loadSubscriptionStatus() {
+            try {
+                const token = getAuthToken();
+                if (!token) {
+                    window.location.href = '/auth';
+                    return;
+                }
+
+                const response = await fetch('/api/subscription/status', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load subscription status');
+                }
+
+                subscriptionData = await response.json();
+                updateStatusUI();
+            } catch (error) {
+                console.error('Error loading subscription:', error);
+                showAlert('Failed to load subscription status', 'error');
+            }
+        }
+
+        // Update UI based on subscription status
+        function updateStatusUI() {
+            const statusSection = document.getElementById('statusSection');
+            const statusIcon = document.getElementById('statusIcon');
+            const statusText = document.getElementById('statusText');
+            const statusDetails = document.getElementById('statusDetails');
+            const subscribeButton = document.getElementById('subscribeButton');
+            const activeControls = document.getElementById('activeControls');
+
+            if (subscriptionData.is_active) {
+                // Active subscription
+                statusSection.classList.add('status-active');
+                statusIcon.innerHTML = '<i class="fas fa-check"></i>';
+                statusIcon.classList.add('active');
+                statusText.textContent = 'Active';
+
+                statusDetails.innerHTML = `
+                    <div class="status-item">
+                        <span class="status-label">Status</span>
+                        <span class="status-value" style="color: #28a745;">Active</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Started</span>
+                        <span class="status-value">${new Date(subscriptionData.started_at).toLocaleDateString()}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Expires</span>
+                        <span class="status-value">${new Date(subscriptionData.expires_at).toLocaleDateString()}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Days Remaining</span>
+                        <span class="status-value">${subscriptionData.days_remaining} days</span>
+                    </div>
+                `;
+
+                subscribeButton.classList.add('hidden');
+                activeControls.classList.remove('hidden');
+            } else {
+                // Inactive/Expired subscription
+                statusSection.classList.add('status-inactive');
+                statusIcon.innerHTML = '<i class="fas fa-times"></i>';
+                statusIcon.classList.add('inactive');
+                statusText.textContent = subscriptionData.status === 'expired' ? 'Expired' : 'Inactive';
+
+                statusDetails.innerHTML = `
+                    <div class="status-item">
+                        <span class="status-label">Status</span>
+                        <span class="status-value" style="color: #dc3545;">${
+                            subscriptionData.status === 'expired' ? 'Expired' : 'Inactive'
+                        }</span>
+                    </div>
+                    ${subscriptionData.expires_at ? `
+                    <div class="status-item">
+                        <span class="status-label">Expired On</span>
+                        <span class="status-value">${new Date(subscriptionData.expires_at).toLocaleDateString()}</span>
+                    </div>
+                    ` : ''}
+                `;
+
+                subscribeButton.classList.remove('hidden');
+                activeControls.classList.add('hidden');
+            }
+        }
+
+        // Initialize Paystack payment
+        async function initializePayment() {
+            try {
+                const token = getAuthToken();
+                const button = event.target;
+                button.disabled = true;
+                button.innerHTML = '<span class="loading"></span>Processing...';
+
+                const response = await fetch('/api/subscription/initialize', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to initialize payment');
+                }
+
+                // Redirect to Paystack payment page
+                window.location.href = data.authorization_url;
+
+            } catch (error) {
+                console.error('Payment initialization error:', error);
+                showAlert(error.message || 'Failed to initialize payment', 'error');
+                event.target.disabled = false;
+                event.target.textContent = 'Subscribe Now';
+            }
+        }
+
+        // Cancel subscription
+        async function cancelSubscription() {
+            if (!confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.')) {
+                return;
+            }
+
+            try {
+                const token = getAuthToken();
+                const button = event.target;
+                button.disabled = true;
+                button.innerHTML = '<span class="loading"></span>Cancelling...';
+
+                const response = await fetch('/api/subscription/cancel', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to cancel subscription');
+                }
+
+                showAlert(data.message, 'success');
+                setTimeout(() => loadSubscriptionStatus(), 1500);
+
+            } catch (error) {
+                console.error('Cancellation error:', error);
+                showAlert(error.message || 'Failed to cancel subscription', 'error');
+                event.target.disabled = false;
+                event.target.textContent = 'Cancel Subscription';
+            }
+        }
+
+        // Load status on page load
+        document.addEventListener('DOMContentLoaded', loadSubscriptionStatus);
+    </script>
+</body>
+</html>

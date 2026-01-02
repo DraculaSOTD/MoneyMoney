@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Models - Admin Panel</title>
+    <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/admin/css/admin.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Trading Platform</h2>
+                <span class="admin-badge">ADMIN</span>
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="/admin/dashboard" class="nav-link">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/admin/data-collection" class="nav-link">
+                            <i class="fas fa-cloud-download-alt"></i>
+                            <span>Data Collection</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/admin/data-management" class="nav-link">
+                            <i class="fas fa-database"></i>
+                            <span>Data Management</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/admin/models" class="nav-link active">
+                            <i class="fas fa-brain"></i>
+                            <span>ML Models</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header">
+                <div>
+                    <h1>ML Models</h1>
+                    <p>Train and manage machine learning models</p>
+                </div>
+                <div class="page-header-actions">
+                    <div class="form-group" style="margin: 0; min-width: 300px;">
+                        <select id="profileSelect" class="form-control">
+                            <option value="">Select a profile...</option>
+                        </select>
+                    </div>
+                    <button id="trainModelBtn" class="btn btn-primary" disabled>
+                        <i class="fas fa-brain"></i>
+                        Train Models
+                    </button>
+                    <button id="refreshBtn" class="btn btn-secondary">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Error Alert -->
+            <div id="errorAlert" class="alert alert-error" style="display: none;">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="errorMessage"></span>
+                <button onclick="document.getElementById('errorAlert').style.display='none'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs-container glassmorphism">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="overview">
+                        <i class="fas fa-list"></i>
+                        Overview
+                    </button>
+                    <button class="tab-btn" data-tab="training">
+                        <i class="fas fa-history"></i>
+                        Training History
+                    </button>
+                    <button class="tab-btn" data-tab="catalog">
+                        <i class="fas fa-book"></i>
+                        Model Catalog
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="tab-content-container">
+                <!-- Overview Tab -->
+                <div id="tab-overview" class="tab-content active">
+                    <div id="noProfileSelected" class="empty-state">
+                        <i class="fas fa-chart-line"></i>
+                        <h3>No Profile Selected</h3>
+                        <p>Please select a trading profile to view models</p>
+                    </div>
+
+                    <div id="modelsTable" class="glassmorphism" style="display: none;">
+                        <div class="table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Model Name</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Accuracy</th>
+                                        <th>Sharpe Ratio</th>
+                                        <th>Last Trained</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modelsTableBody">
+                                    <!-- Populated by JavaScript -->
+                                </tbody>
+                            </table>
+
+                            <div id="noModels" class="empty-state-small" style="display: none;">
+                                <i class="fas fa-brain"></i>
+                                <p>No models created yet. Train some models to get started.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Training History Tab -->
+                <div id="tab-training" class="tab-content">
+                    <div id="trainingHistoryContainer" class="glassmorphism">
+                        <div id="trainingHistoryList">
+                            <!-- Populated by JavaScript -->
+                        </div>
+
+                        <div id="noTrainingHistory" class="empty-state-small">
+                            <i class="fas fa-history"></i>
+                            <p>No training history available</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Model Catalog Tab -->
+                <div id="tab-catalog" class="tab-content">
+                    <div class="catalog-grid">
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <h3>ARIMA</h3>
+                            <p class="catalog-type">Statistical</p>
+                            <p class="catalog-desc">Auto-Regressive Integrated Moving Average for time series forecasting</p>
+                            <ul class="catalog-features">
+                                <li>Trend analysis</li>
+                                <li>Seasonality detection</li>
+                                <li>Short-term predictions</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-wave-square"></i>
+                            </div>
+                            <h3>GARCH</h3>
+                            <p class="catalog-type">Statistical</p>
+                            <p class="catalog-desc">Generalized Autoregressive Conditional Heteroskedasticity for volatility modeling</p>
+                            <ul class="catalog-features">
+                                <li>Volatility forecasting</li>
+                                <li>Risk assessment</li>
+                                <li>Variance clustering</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <h3>GRU Attention</h3>
+                            <p class="catalog-type">Deep Learning</p>
+                            <p class="catalog-desc">Gated Recurrent Unit with attention mechanism for sequence modeling</p>
+                            <ul class="catalog-features">
+                                <li>Long-term dependencies</li>
+                                <li>Attention weights</li>
+                                <li>Pattern recognition</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-network-wired"></i>
+                            </div>
+                            <h3>CNN Pattern</h3>
+                            <p class="catalog-type">Deep Learning</p>
+                            <p class="catalog-desc">Convolutional Neural Network for pattern detection in price charts</p>
+                            <ul class="catalog-features">
+                                <li>Chart pattern detection</li>
+                                <li>Visual feature extraction</li>
+                                <li>Technical analysis</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-memory"></i>
+                            </div>
+                            <h3>LSTM</h3>
+                            <p class="catalog-type">Deep Learning</p>
+                            <p class="catalog-desc">Long Short-Term Memory network for sequential data with memory cells</p>
+                            <ul class="catalog-features">
+                                <li>Long-term dependencies</li>
+                                <li>Memory cell architecture</li>
+                                <li>Gradient flow control</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-layer-group"></i>
+                            </div>
+                            <h3>Transformer</h3>
+                            <p class="catalog-type">Deep Learning</p>
+                            <p class="catalog-desc">Self-attention based architecture for parallel sequence processing</p>
+                            <ul class="catalog-features">
+                                <li>Multi-head attention</li>
+                                <li>Parallel processing</li>
+                                <li>Position encoding</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-sitemap"></i>
+                            </div>
+                            <h3>XGBoost</h3>
+                            <p class="catalog-type">Ensemble</p>
+                            <p class="catalog-desc">Extreme Gradient Boosting for high-performance classification</p>
+                            <ul class="catalog-features">
+                                <li>Feature importance</li>
+                                <li>Regularization</li>
+                                <li>Fast training</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-tree"></i>
+                            </div>
+                            <h3>Random Forest</h3>
+                            <p class="catalog-type">Ensemble</p>
+                            <p class="catalog-desc">Ensemble of decision trees for robust predictions</p>
+                            <ul class="catalog-features">
+                                <li>Reduces overfitting</li>
+                                <li>Handles noise well</li>
+                                <li>Interpretable results</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-bolt"></i>
+                            </div>
+                            <h3>LightGBM</h3>
+                            <p class="catalog-type">Ensemble</p>
+                            <p class="catalog-desc">Light Gradient Boosting Machine for efficient training</p>
+                            <ul class="catalog-features">
+                                <li>Memory efficient</li>
+                                <li>Histogram-based</li>
+                                <li>Categorical support</li>
+                            </ul>
+                        </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-calendar-alt"></i>
+                            </div>
+                            <h3>Prophet</h3>
+                            <p class="catalog-type">Statistical</p>
+                            <p class="catalog-desc">Facebook's time series forecasting with seasonality</p>
+                            <ul class="catalog-features">
+                                <li>Automatic seasonality</li>
+                                <li>Holiday effects</li>
+                                <li>Trend changepoints</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Training Dialog -->
+    <div id="trainingDialog" class="dialog-overlay" style="display: none;">
+        <div class="dialog glassmorphism">
+            <div class="dialog-header">
+                <h2>Train Models</h2>
+                <button class="dialog-close" onclick="closeTrainingDialog()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="dialog-content">
+                <p class="dialog-description">Select which models to train for <strong id="trainingSymbol">-</strong></p>
+
+                <div class="model-selection">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="ARIMA" checked>
+                        <span>ARIMA - Statistical time series</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="GARCH" checked>
+                        <span>GARCH - Volatility modeling</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="GRU_Attention" checked>
+                        <span>GRU Attention - Deep learning sequence</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="CNN_Pattern" checked>
+                        <span>CNN Pattern - Pattern detection</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="LSTM" checked>
+                        <span>LSTM - Deep learning memory network</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="Transformer" checked>
+                        <span>Transformer - Attention-based model</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="XGBoost" checked>
+                        <span>XGBoost - Gradient boosting</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="Random_Forest" checked>
+                        <span>Random Forest - Ensemble trees</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="LightGBM" checked>
+                        <span>LightGBM - Light gradient boosting</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="Prophet" checked>
+                        <span>Prophet - Time series forecasting</span>
+                    </label>
+                </div>
+
+                <div id="trainingProgress" style="display: none; margin-top: 24px;">
+                    <div class="progress-info">
+                        <span id="trainingStatus">Initializing training...</span>
+                        <span id="trainingPercent">0%</span>
+                    </div>
+                    <div class="progress-bar-wrapper">
+                        <div class="progress-bar-fill" id="trainingProgressBar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn btn-secondary" onclick="closeTrainingDialog()">Cancel</button>
+                <button id="startTrainingBtn" class="btn btn-primary" onclick="startTraining()">
+                    <i class="fas fa-play"></i>
+                    Start Training
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Socket.io for WebSocket -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <!-- Load our JavaScript files -->
+    <script src="/admin/js/ui-helpers.js"></script>
+    <script src="/admin/js/api-service.js"></script>
+    <script src="/admin/js/websocket.js"></script>
+    <script src="/admin/js/models.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 260px;
+            background-color: var(--color-card-background);
+            border-right: 1px solid var(--color-card-border);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px 0;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 20px 20px;
+            border-bottom: 1px solid var(--color-card-border);
+            margin-bottom: 20px;
+        }
+
+        .sidebar-header h2 {
+            color: var(--color-text-primary);
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+        }
+
+        .admin-badge {
+            display: inline-block;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin-bottom: 4px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: var(--color-text-primary);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-link:hover {
+            background-color: var(--color-card-background);
+        }
+
+        .nav-link.active {
+            background-color: rgba(225, 0, 122, 0.2);
+            border-left-color: var(--color-primary-accent);
+        }
+
+        .nav-link.active i {
+            color: var(--color-primary-accent);
+        }
+
+        .nav-link i {
+            margin-right: 12px;
+            font-size: 1.2rem;
+            color: var(--color-text-secondary);
+            width: 24px;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: 260px;
+            padding: 30px;
+        }
+
+        .page-header {
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .page-header h1 {
+            color: var(--color-text-primary);
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .page-header p {
+            color: var(--color-text-secondary);
+        }
+
+        .page-header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        /* Form Styles */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            color: var(--color-text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--color-card-border);
+            border-radius: 8px;
+            color: var(--color-text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--color-primary-accent);
+            background-color: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(225, 0, 122, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: transparent;
+            border: 2px solid var(--color-primary-accent);
+            color: var(--color-primary-accent);
+            padding: 10px 22px;
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--color-primary-accent);
+            color: white;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.875rem;
+        }
+
+        /* Alerts */
+        .alert {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert-error {
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--color-error);
+            color: var(--color-error);
+        }
+
+        .alert button {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        /* Tabs */
+        .tabs-container {
+            padding: 0;
+            margin-bottom: 24px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 2px solid var(--color-card-border);
+        }
+
+        .tab-btn {
+            padding: 16px 24px;
+            background: none;
+            border: none;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            margin-bottom: -2px;
+        }
+
+        .tab-btn:hover {
+            color: var(--color-text-primary);
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            color: var(--color-primary-accent);
+            border-bottom-color: var(--color-primary-accent);
+        }
+
+        .tab-content-container {
+            min-height: 400px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Empty States */
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--color-text-secondary);
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            color: var(--color-text-primary);
+            margin-bottom: 12px;
+        }
+
+        .empty-state-small {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--color-text-secondary);
+        }
+
+        .empty-state-small i {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table thead {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .data-table th {
+            padding: 16px;
+            text-align: left;
+            color: var(--color-primary-accent);
+            font-weight: 600;
+            border-bottom: 2px solid var(--color-card-border);
+        }
+
+        .data-table td {
+            padding: 16px;
+            color: var(--color-text-primary);
+            border-bottom: 1px solid var(--color-card-border);
+        }
+
+        .data-table tbody tr {
+            transition: background-color 0.2s ease;
+        }
+
+        .data-table tbody tr:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-badge.success {
+            background-color: rgba(34, 197, 94, 0.2);
+            border: 1px solid var(--color-success);
+            color: var(--color-success);
+        }
+
+        .status-badge.warning {
+            background-color: rgba(245, 158, 11, 0.2);
+            border: 1px solid var(--color-warning);
+            color: var(--color-warning);
+        }
+
+        .status-badge.error {
+            background-color: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--color-error);
+            color: var(--color-error);
+        }
+
+        .status-badge.info {
+            background-color: rgba(138, 43, 226, 0.2);
+            border: 1px solid var(--color-secondary-accent);
+            color: var(--color-secondary-accent);
+        }
+
+        .status-badge.default {
+            background-color: rgba(176, 176, 176, 0.2);
+            border: 1px solid var(--color-text-secondary);
+            color: var(--color-text-secondary);
+        }
+
+        /* Action Buttons */
+        .action-btns {
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            border: none;
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--color-text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .icon-btn:hover:not(:disabled) {
+            background-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .icon-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .icon-btn.primary {
+            background-color: rgba(225, 0, 122, 0.2);
+            color: var(--color-primary-accent);
+        }
+
+        .icon-btn.success {
+            background-color: rgba(34, 197, 94, 0.2);
+            color: var(--color-success);
+        }
+
+        .icon-btn.danger {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: var(--color-error);
+        }
+
+        /* Catalog Grid */
+        .catalog-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
+        }
+
+        .catalog-card {
+            padding: 30px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .catalog-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px var(--color-card-glow);
+        }
+
+        .catalog-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .catalog-icon i {
+            font-size: 1.8rem;
+            color: white;
+        }
+
+        .catalog-card h3 {
+            color: var(--color-text-primary);
+            margin-bottom: 8px;
+            font-size: 1.5rem;
+        }
+
+        .catalog-type {
+            color: var(--color-primary-accent);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+        .catalog-desc {
+            color: var(--color-text-secondary);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .catalog-features {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .catalog-features li {
+            padding: 8px 0;
+            color: var(--color-text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .catalog-features li:before {
+            content: '✓';
+            color: var(--color-success);
+            font-weight: bold;
+        }
+
+        /* Dialog */
+        .dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .dialog {
+            min-width: 500px;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        .dialog-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid var(--color-card-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dialog-header h2 {
+            color: var(--color-text-primary);
+            font-size: 1.5rem;
+        }
+
+        .dialog-close {
+            background: none;
+            border: none;
+            color: var(--color-text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        .dialog-close:hover {
+            color: var(--color-text-primary);
+        }
+
+        .dialog-content {
+            padding: 30px;
+        }
+
+        .dialog-description {
+            color: var(--color-text-secondary);
+            margin-bottom: 24px;
+        }
+
+        .dialog-actions {
+            padding: 20px 30px;
+            border-top: 1px solid var(--color-card-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* Model Selection */
+        .model-selection {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--color-card-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .checkbox-label:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            border-color: var(--color-primary-accent);
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .checkbox-label span {
+            color: var(--color-text-primary);
+            font-weight: 500;
+        }
+
+        /* Progress */
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            color: var(--color-text-primary);
+        }
+
+        .progress-bar-wrapper {
+            width: 100%;
+            height: 12px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-primary-accent), var(--color-secondary-accent));
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        /* Training History */
+        .history-item {
+            padding: 20px;
+            border: 1px solid var(--color-card-border);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .history-title {
+            color: var(--color-text-primary);
+            font-weight: 600;
+        }
+
+        .history-details {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            color: var(--color-text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .history-detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .history-detail-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .history-detail-value {
+            color: var(--color-text-primary);
+            font-weight: 600;
+        }
+    </style>
+</body>
+</html>

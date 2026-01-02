@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="/css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/main.js"></script>
+    <script src="/js/dashboard.js"></script>
 </head>
 <body>
     <!-- Header -->
@@ -146,7 +148,27 @@
 
                         <!-- Analysis Summary Tab -->
                         <div id="summaryTab" class="tab-content">
-                            <div class="grid grid-4-cols" id="analysisSummary">
+                            <!-- Overall Signal Card -->
+                            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+                                    <div>
+                                        <h3 style="margin: 0 0 5px 0; color: var(--color-text-primary);">Overall Signal</h3>
+                                        <p style="margin: 0; color: var(--color-text-secondary); font-size: 0.9rem;">Based on technical indicator consensus</p>
+                                    </div>
+                                    <div id="overallSignal" style="display: flex; align-items: center; gap: 15px;">
+                                        <div id="signalBadge" style="padding: 10px 25px; border-radius: 25px; font-size: 1.2rem; font-weight: 700; background: rgba(128,128,128,0.2); color: #888;">
+                                            LOADING...
+                                        </div>
+                                        <div id="signalStrength" style="text-align: right;">
+                                            <div style="font-size: 0.8rem; color: var(--color-text-secondary);">Signal Strength</div>
+                                            <div id="signalStrengthValue" style="font-size: 1.1rem; font-weight: 600;">--</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Price & Levels Row -->
+                            <div class="grid grid-4-cols" style="margin-bottom: 20px;">
                                 <div class="card" style="text-align: center;">
                                     <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">Current Price</h4>
                                     <div id="currentPrice" style="font-size: 1.5rem; font-weight: 700;">--</div>
@@ -163,17 +185,112 @@
                                     <div style="font-size: 0.9rem; color: var(--color-text-secondary);">Key resistance</div>
                                 </div>
                                 <div class="card" style="text-align: center;">
-                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">RSI</h4>
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 10px;">RSI (14)</h4>
                                     <div id="rsiValue" style="font-size: 1.5rem; font-weight: 700;">--</div>
                                     <div id="rsiStatus" style="font-size: 0.9rem; margin-top: 5px;">--</div>
+                                </div>
+                            </div>
+
+                            <!-- Indicator Summary Sections -->
+                            <div class="grid grid-3-cols" id="indicatorSummaryGrid">
+                                <!-- Moving Averages Summary -->
+                                <div class="card">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 15px; border-bottom: 1px solid var(--color-card-border); padding-bottom: 10px;">
+                                        Moving Averages
+                                    </h4>
+                                    <div id="maSummary">
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>SMA 20</span>
+                                            <span id="sma20Signal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>SMA 50</span>
+                                            <span id="sma50Signal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>EMA 12/26</span>
+                                            <span id="emaSignal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--color-card-border);">
+                                            <span style="font-weight: 600;">MA Trend</span>
+                                            <span id="maTrend" style="font-weight: 700;">--</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Oscillators Summary -->
+                                <div class="card">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 15px; border-bottom: 1px solid var(--color-card-border); padding-bottom: 10px;">
+                                        Oscillators
+                                    </h4>
+                                    <div id="oscillatorSummary">
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>RSI (14)</span>
+                                            <span id="rsiSignal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>MACD</span>
+                                            <span id="macdSignal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>Stochastic</span>
+                                            <span id="stochSignal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--color-card-border);">
+                                            <span style="font-weight: 600;">Oscillator Bias</span>
+                                            <span id="oscillatorBias" style="font-weight: 700;">--</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Volatility & Volume Summary -->
+                                <div class="card">
+                                    <h4 style="color: var(--color-primary-accent); margin-bottom: 15px; border-bottom: 1px solid var(--color-card-border); padding-bottom: 10px;">
+                                        Volatility & Volume
+                                    </h4>
+                                    <div id="volatilitySummary">
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>Bollinger %B</span>
+                                            <span id="bbSignal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>ATR (14)</span>
+                                            <span id="atrValue" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                            <span>Volume</span>
+                                            <span id="volumeSignal" style="font-weight: 600;">--</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--color-card-border);">
+                                            <span style="font-weight: 600;">ADX Trend</span>
+                                            <span id="adxTrend" style="font-weight: 700;">--</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Models Tab -->
                         <div id="modelsTab" class="tab-content" style="display: none;">
-                            <div class="grid grid-3-cols" id="modelPredictions">
-                                <!-- Model predictions will be loaded dynamically -->
+                            <!-- Trained Models Section -->
+                            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                    <h3 style="margin: 0; color: var(--color-text-primary);">Trained Models</h3>
+                                    <span id="modelsCount" style="color: var(--color-text-secondary); font-size: 0.9rem;">0 models</span>
+                                </div>
+                                <div id="modelsList">
+                                    <div style="text-align: center; padding: 20px; color: var(--color-text-secondary);">
+                                        Loading models...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Model Predictions Section -->
+                            <div class="card" style="padding: 20px;">
+                                <h3 style="margin: 0 0 15px 0; color: var(--color-text-primary);">Model Predictions</h3>
+                                <div class="grid grid-3-cols" id="modelPredictions">
+                                    <!-- Model predictions will be loaded dynamically -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -606,453 +723,7 @@
     </style>
 
     <script>
-        // Logout function - with improved error handling and debug logging
-        function logout() {
-            console.log('Logout function called'); // Debug log
-            try {
-                // Show loading state
-                const logoutBtn = document.getElementById('logoutBtn');
-                console.log('Logout button found:', logoutBtn); // Debug log
-
-                if (logoutBtn) {
-                    logoutBtn.textContent = 'Logging out...';
-                    logoutBtn.disabled = true;
-                }
-
-                // Clear authentication data
-                console.log('Clearing authentication data...'); // Debug log
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-
-                // Clear any cached data
-                localStorage.removeItem('instruments');
-                localStorage.removeItem('models');
-
-                console.log('Redirecting to homepage...'); // Debug log
-                // Show brief message and redirect
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 500);
-
-            } catch (error) {
-                console.error('Logout error:', error);
-                alert('Logout failed. Please try again.');
-
-                // Reset button state
-                const logoutBtn = document.getElementById('logoutBtn');
-                if (logoutBtn) {
-                    logoutBtn.textContent = 'Logout';
-                    logoutBtn.disabled = false;
-                }
-            }
-        }
-
-        // Make logout function globally available immediately
-        window.logout = logout;
-        console.log('Logout function assigned to window:', typeof window.logout); // Debug log
-
-        // Trading Analysis Functionality
-        let selectedInstrument = null;
-        let selectedCurrency = 'USD';
-        let currentChart = null;
-        let availableInstruments = [];
-
-        // Mock exchange rates (in production, these would come from an API)
-        const exchangeRates = {
-            USD: 1,
-            EUR: 0.85,
-            GBP: 0.73,
-            JPY: 110.0
-        };
-
-        // Generate mock chart data
-        function generateMockChartData(symbol, timeframe) {
-            const dataPoints = timeframe === '1D' ? 24 : timeframe === '7D' ? 7 : timeframe === '1M' ? 30 : 90;
-            const basePrice = selectedInstrument ? selectedInstrument.price : 45000;
-            const labels = [];
-            const data = [];
-
-            for (let i = dataPoints - 1; i >= 0; i--) {
-                let label;
-                const date = new Date();
-
-                if (timeframe === '1D') {
-                    date.setHours(date.getHours() - i);
-                    label = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                } else {
-                    date.setDate(date.getDate() - i);
-                    label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                }
-
-                labels.push(label);
-
-                // Generate realistic price movement
-                const volatility = 0.02;
-                const randomChange = (Math.random() - 0.5) * 2 * volatility;
-                const price = basePrice * (1 + randomChange * (i / dataPoints));
-                data.push(price);
-            }
-
-            return { labels, data };
-        }
-
-        // Generate mock technical analysis
-        function generateMockAnalysis(instrument) {
-            const price = instrument.price;
-            const support = price * 0.95;
-            const resistance = price * 1.05;
-            const rsi = Math.floor(Math.random() * 100);
-
-            let rsiStatus = 'Neutral';
-            if (rsi < 30) rsiStatus = 'Oversold';
-            else if (rsi > 70) rsiStatus = 'Overbought';
-
-            return {
-                currentPrice: price,
-                priceChange: instrument.change_percent,
-                support,
-                resistance,
-                rsi,
-                rsiStatus
-            };
-        }
-
-        // Generate model predictions
-        function generateModelPredictions(instrument) {
-            const predictions = [
-                {
-                    name: 'Neural Trend Predictor',
-                    description: 'Advanced neural network analysis',
-                    outcome: Math.random() > 0.5 ? 'BUY' : 'SELL',
-                    confidence: Math.floor(Math.random() * 20) + 75, // 75-95%
-                    accuracy: 89.5
-                },
-                {
-                    name: 'Momentum Signal AI',
-                    description: 'Momentum-based trading signals',
-                    outcome: Math.random() > 0.6 ? 'BUY' : Math.random() > 0.3 ? 'SELL' : 'HOLD',
-                    confidence: Math.floor(Math.random() * 25) + 70, // 70-95%
-                    accuracy: 84.3
-                },
-                {
-                    name: 'Risk-Adjusted Portfolio',
-                    description: 'Portfolio optimization model',
-                    outcome: Math.random() > 0.4 ? 'BUY' : 'SELL',
-                    confidence: Math.floor(Math.random() * 15) + 80, // 80-95%
-                    accuracy: 91.7
-                }
-            ];
-
-            return predictions;
-        }
-
-        // Update chart
-        function updateChart(instrument, timeframe = '1D') {
-            const chartData = generateMockChartData(instrument.symbol, timeframe);
-
-            if (currentChart) {
-                currentChart.destroy();
-            }
-
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            currentChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: chartData.labels,
-                    datasets: [{
-                        label: `${instrument.name} Price (${selectedCurrency})`,
-                        data: chartData.data.map(price => convertCurrency(price, selectedCurrency)),
-                        borderColor: '#E1007A',
-                        backgroundColor: 'rgba(225, 0, 122, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            labels: {
-                                color: '#FFFFFF'
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: {
-                                color: '#B0B0B0'
-                            },
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.1)'
-                            }
-                        },
-                        y: {
-                            ticks: {
-                                color: '#B0B0B0',
-                                callback: function(value) {
-                                    return getCurrencySymbol(selectedCurrency) + value.toLocaleString();
-                                }
-                            },
-                            grid: {
-                                color: 'rgba(255, 255, 255, 0.1)'
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        // Convert currency
-        function convertCurrency(usdPrice, targetCurrency) {
-            return usdPrice / exchangeRates[targetCurrency];
-        }
-
-        // Get currency symbol
-        function getCurrencySymbol(currency) {
-            const symbols = {
-                USD: '$',
-                EUR: '€',
-                GBP: '£',
-                JPY: '¥'
-            };
-            return symbols[currency] || '$';
-        }
-
-        // Update analysis summary
-        function updateAnalysisSummary(instrument) {
-            const analysis = generateMockAnalysis(instrument);
-            const currencySymbol = getCurrencySymbol(selectedCurrency);
-
-            document.getElementById('currentPrice').textContent =
-                currencySymbol + convertCurrency(analysis.currentPrice, selectedCurrency).toLocaleString();
-
-            const changeElement = document.getElementById('priceChange');
-            changeElement.textContent = (analysis.priceChange >= 0 ? '+' : '') + analysis.priceChange.toFixed(2) + '%';
-            changeElement.style.color = analysis.priceChange >= 0 ? '#22c55e' : '#ef4444';
-
-            document.getElementById('supportLevel').textContent =
-                currencySymbol + convertCurrency(analysis.support, selectedCurrency).toLocaleString();
-
-            document.getElementById('resistanceLevel').textContent =
-                currencySymbol + convertCurrency(analysis.resistance, selectedCurrency).toLocaleString();
-
-            document.getElementById('rsiValue').textContent = analysis.rsi.toFixed(0);
-
-            const rsiStatusElement = document.getElementById('rsiStatus');
-            rsiStatusElement.textContent = analysis.rsiStatus;
-            if (analysis.rsi < 30) rsiStatusElement.style.color = '#22c55e';
-            else if (analysis.rsi > 70) rsiStatusElement.style.color = '#ef4444';
-            else rsiStatusElement.style.color = '#f59e0b';
-        }
-
-        // Update analysis tab with dynamic technical indicators
-        function updateAnalysisTab(instrument) {
-            // Generate dynamic MACD values
-            const macdSignal = Math.random() > 0.5 ? 'Bullish' : 'Bearish';
-            const macdColor = macdSignal === 'Bullish' ? '#22c55e' : '#ef4444';
-            const macdElement = document.getElementById('macdValue');
-            macdElement.textContent = macdSignal;
-            macdElement.style.color = macdColor;
-
-            // Generate dynamic Bollinger Bands
-            const bbPositions = ['Lower', 'Middle', 'Upper'];
-            const bbPosition = bbPositions[Math.floor(Math.random() * 3)];
-            const bbColor = bbPosition === 'Lower' ? '#22c55e' : bbPosition === 'Upper' ? '#ef4444' : '#f59e0b';
-            const bbElement = document.getElementById('bbValue');
-            bbElement.textContent = bbPosition;
-            bbElement.style.color = bbColor;
-
-            // Generate dynamic Volume
-            const volumeLevels = ['Low', 'Medium', 'High'];
-            const volumeLevel = volumeLevels[Math.floor(Math.random() * 3)];
-            document.getElementById('volumeValue').textContent = volumeLevel;
-
-            // Generate dynamic Fear & Greed Index
-            const fearGreed = Math.floor(Math.random() * 100);
-            let fgLabel = fearGreed < 25 ? 'Extreme Fear' :
-                         fearGreed < 45 ? 'Fear' :
-                         fearGreed < 55 ? 'Neutral' :
-                         fearGreed < 75 ? 'Greed' : 'Extreme Greed';
-            const fgColor = fearGreed < 45 ? '#ef4444' : fearGreed < 55 ? '#f59e0b' : '#22c55e';
-            const fgElement = document.getElementById('fearGreedValue');
-            fgElement.textContent = `${fearGreed} (${fgLabel})`;
-            fgElement.style.color = fgColor;
-        }
-
-        // Update model predictions
-        function updateModelPredictions(instrument) {
-            const predictions = generateModelPredictions(instrument);
-            const container = document.getElementById('modelPredictions');
-
-            container.innerHTML = predictions.map(prediction => `
-                <div class="card model-prediction-card">
-                    <div class="prediction-outcome ${prediction.outcome.toLowerCase()}">
-                        ${prediction.outcome}
-                    </div>
-                    <h4 style="margin: 0 0 10px 0; color: var(--color-text-primary);">${prediction.name}</h4>
-                    <p style="margin: 0 0 15px 0; color: var(--color-text-secondary); font-size: 0.9rem;">
-                        ${prediction.description}
-                    </p>
-                    <div style="margin-bottom: 10px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                            <span style="font-size: 0.9rem;">Confidence:</span>
-                            <span style="font-weight: 600; color: var(--color-primary-accent);">${prediction.confidence}%</span>
-                        </div>
-                        <div class="confidence-meter">
-                            <div class="confidence-fill" style="width: ${prediction.confidence}%"></div>
-                        </div>
-                    </div>
-                    <div style="font-size: 0.8rem; color: var(--color-text-secondary);">
-                        Model Accuracy: ${prediction.accuracy}%
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Search functionality
-        function setupSearch() {
-            const searchInput = document.getElementById('instrumentSearch');
-            const dropdown = document.getElementById('searchDropdown');
-
-            searchInput.addEventListener('input', function() {
-                const query = this.value.toLowerCase();
-                if (query.length < 1) {
-                    dropdown.style.display = 'none';
-                    return;
-                }
-
-                const filtered = availableInstruments.filter(instrument =>
-                    instrument.name.toLowerCase().includes(query) ||
-                    instrument.symbol.toLowerCase().includes(query)
-                );
-
-                if (filtered.length > 0) {
-                    dropdown.innerHTML = filtered.slice(0, 5).map(instrument => `
-                        <div class="search-dropdown-item" data-symbol="${instrument.symbol}">
-                            <strong>${instrument.name}</strong> (${instrument.symbol})
-                            <div style="font-size: 0.8rem; color: var(--color-text-secondary);">
-                                ${instrument.category.charAt(0).toUpperCase() + instrument.category.slice(1)}
-                            </div>
-                        </div>
-                    `).join('');
-                    dropdown.style.display = 'block';
-                } else {
-                    dropdown.style.display = 'none';
-                }
-            });
-
-            // Handle dropdown clicks
-            dropdown.addEventListener('click', function(e) {
-                const item = e.target.closest('.search-dropdown-item');
-                if (item) {
-                    const symbol = item.dataset.symbol;
-                    const instrument = availableInstruments.find(i => i.symbol === symbol);
-                    selectInstrument(instrument);
-                    searchInput.value = `${instrument.name} (${instrument.symbol})`;
-                    dropdown.style.display = 'none';
-                }
-            });
-
-            // Hide dropdown when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.search-container')) {
-                    dropdown.style.display = 'none';
-                }
-            });
-        }
-
-        // Select instrument
-        function selectInstrument(instrument) {
-            selectedInstrument = instrument;
-            document.getElementById('selectedInstrumentTitle').textContent =
-                `${instrument.name} (${instrument.symbol})`;
-
-            updateChart(instrument);
-            updateAnalysisSummary(instrument);
-            updateAnalysisTab(instrument);
-
-            // Always update model predictions when instrument is selected
-            updateModelPredictions(instrument);
-        }
-
-        // Setup timeframe controls
-        function setupTimeframeControls() {
-            document.querySelectorAll('.timeframe-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-
-                    if (selectedInstrument) {
-                        updateChart(selectedInstrument, this.dataset.timeframe);
-                    }
-                });
-            });
-        }
-
-        // Setup currency selector
-        function setupCurrencySelector() {
-            document.getElementById('currencySelect').addEventListener('change', function() {
-                selectedCurrency = this.value;
-                if (selectedInstrument) {
-                    updateChart(selectedInstrument, document.querySelector('.timeframe-btn.active').dataset.timeframe);
-                    updateAnalysisSummary(selectedInstrument);
-                }
-            });
-        }
-
-        // Setup instruments dropdown
-        function setupInstrumentsDropdown() {
-            populateInstrumentsDropdown();
-
-            document.getElementById('instrumentsDropdown').addEventListener('change', function() {
-                const selectedSymbol = this.value;
-                if (selectedSymbol) {
-                    const instrument = availableInstruments.find(i => i.symbol === selectedSymbol);
-                    if (instrument) {
-                        selectInstrument(instrument);
-                        // Update search input to show selection
-                        document.getElementById('instrumentSearch').value = `${instrument.name} (${instrument.symbol})`;
-                    }
-                }
-            });
-        }
-
-        // Populate instruments dropdown with categories
-        function populateInstrumentsDropdown() {
-            const dropdown = document.getElementById('instrumentsDropdown');
-
-            if (availableInstruments.length === 0) {
-                return; // Will be called again when instruments are loaded
-            }
-
-            // Group instruments by category
-            const crypto = availableInstruments.filter(i => i.category === 'crypto');
-            const forex = availableInstruments.filter(i => i.category === 'forex');
-
-            let optionsHTML = '<option value="">-- Select Instrument --</option>';
-
-            if (crypto.length > 0) {
-                optionsHTML += '<optgroup label="Cryptocurrency">';
-                crypto.forEach(instrument => {
-                    optionsHTML += `<option value="${instrument.symbol}">${instrument.name} (${instrument.symbol})</option>`;
-                });
-                optionsHTML += '</optgroup>';
-            }
-
-            if (forex.length > 0) {
-                optionsHTML += '<optgroup label="Forex">';
-                forex.forEach(instrument => {
-                    optionsHTML += `<option value="${instrument.symbol}">${instrument.name} (${instrument.symbol})</option>`;
-                });
-                optionsHTML += '</optgroup>';
-            }
-
-            dropdown.innerHTML = optionsHTML;
-        }
-
-        // Setup tab switching
+        // Tab switching functionality (dashboard.js handles everything else)
         function setupTabSwitching() {
             document.querySelectorAll('.toggle-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
@@ -1062,13 +733,6 @@
             });
         }
 
-        // Get currently active tab
-        function getCurrentActiveTab() {
-            const activeBtn = document.querySelector('.toggle-btn.active');
-            return activeBtn ? activeBtn.dataset.tab : null;
-        }
-
-        // Switch to specific tab
         function switchTab(tabName) {
             // Update button states
             document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -1089,91 +753,69 @@
             };
 
             document.getElementById(tabMap[tabName]).style.display = 'block';
-
-            // Update models if switching to models tab and instrument is selected
-            if (tabName === 'models' && selectedInstrument) {
-                updateModelPredictions(selectedInstrument);
-            }
         }
 
-        // Check authentication
-        function checkAuth() {
-            const token = localStorage.getItem('token');
-            const user = localStorage.getItem('user');
-
-            if (!token || !user) {
-                window.location.href = '/auth';
-                return false;
-            }
-
-            try {
-                const userData = JSON.parse(user);
-                return true;
-            } catch (error) {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                window.location.href = '/auth';
-                return false;
-            }
-        }
-
-
-
-        // Load instruments data for search and dropdown
-        async function loadInstrumentsData() {
+        // Load subscription status
+        async function loadSubscriptionStatus() {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/instruments', {
+                const response = await fetch('/api/subscription/status', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to load instruments');
+                    console.log('Subscription check failed, assuming inactive');
+                    return;
                 }
 
-                const instruments = await response.json();
-                availableInstruments = instruments; // Store for search functionality
-                populateInstrumentsDropdown(); // Populate dropdown when instruments are loaded
+                const data = await response.json();
+                updateSubscriptionBadge(data);
             } catch (error) {
-                console.error('Error loading instruments data:', error);
+                console.error('Error loading subscription status:', error);
             }
         }
 
-        // Auto-refresh data
-        function startAutoRefresh() {
-            setInterval(() => {
-                // Auto-refresh can be enabled here if needed
-            }, 30000); // Refresh every 30 seconds
-        }
+        // Update subscription badge
+        function updateSubscriptionBadge(subscriptionData) {
+            const badge = document.getElementById('subscriptionBadge');
+            if (!badge) return;
 
-        // Initialize dashboard
-        window.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM loaded, setting up logout button...'); // Debug log
-
-            // Attach logout event listener
-            const logoutBtn = document.getElementById('logoutBtn');
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', logout);
-                console.log('Logout event listener attached successfully'); // Debug log
+            if (subscriptionData.is_active) {
+                badge.textContent = `Premium Active (${subscriptionData.days_remaining} days left)`;
+                badge.className = 'btn btn-primary';
+                badge.style.background = '#28a745';
+                badge.style.borderColor = '#28a745';
+                badge.style.cursor = 'pointer';
+                badge.onclick = () => window.location.href = '/subscription';
             } else {
-                console.error('Logout button not found!'); // Debug log
+                const status = subscriptionData.status === 'expired' ? 'Expired' : 'Inactive';
+                badge.textContent = `${status} - Upgrade Now`;
+                badge.className = 'btn btn-warning';
+                badge.style.background = '#ffc107';
+                badge.style.borderColor = '#ffc107';
+                badge.style.color = '#000';
+                badge.style.cursor = 'pointer';
+                badge.onclick = () => window.location.href = '/subscription';
             }
+        }
 
-            if (checkAuth()) {
-                loadInstrumentsData();
-                startAutoRefresh();
+        // Initialize on DOM load
+        window.addEventListener('DOMContentLoaded', function() {
+            // Setup tab switching
+            setupTabSwitching();
 
-                // Initialize trading analysis
-                setupSearch();
-                setupTimeframeControls();
-                setupCurrencySelector();
-                setupInstrumentsDropdown();
-                setupTabSwitching();
-            }
+            // Load subscription status
+            loadSubscriptionStatus();
         });
     </script>
+
+    <!-- Connection Status Indicator -->
+    <div id="connectionStatus" class="connection-status connected">
+        <span class="status-dot"></span>
+        <span id="connectionText">Connected</span>
+    </div>
 
     <!-- Footer -->
     <footer class="main-footer" style="padding: 30px 0;">
