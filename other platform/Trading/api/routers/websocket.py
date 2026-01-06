@@ -139,53 +139,64 @@ async def admin_websocket_endpoint(
 
             try:
                 message = json.loads(data)
-                action = message.get('action')
+                # Support both 'action' and 'type' field names for compatibility
+                action = message.get('action') or message.get('type')
 
                 if action == 'subscribe':
-                    channel = message.get('channel')
+                    # Support both 'channel' (string) and 'channels' (array)
+                    channels = message.get('channels', [])
+                    single_channel = message.get('channel')
+                    if single_channel:
+                        channels = [single_channel]
 
-                    if channel == 'data_collection':
-                        await connection_manager.subscribe_to_data_collection(websocket)
-                        await connection_manager.send_personal_message(websocket, {
-                            'type': 'subscribed',
-                            'channel': 'data_collection',
-                            'message': 'Subscribed to data collection updates'
-                        })
+                    for channel in channels:
+                        if channel == 'data_collection':
+                            await connection_manager.subscribe_to_data_collection(websocket)
+                            await connection_manager.send_personal_message(websocket, {
+                                'type': 'subscribed',
+                                'channel': 'data_collection',
+                                'message': 'Subscribed to data collection updates'
+                            })
 
-                    elif channel == 'model_training':
-                        await connection_manager.subscribe_to_model_training(websocket)
-                        await connection_manager.send_personal_message(websocket, {
-                            'type': 'subscribed',
-                            'channel': 'model_training',
-                            'message': 'Subscribed to model training updates'
-                        })
+                        elif channel == 'model_training':
+                            await connection_manager.subscribe_to_model_training(websocket)
+                            await connection_manager.send_personal_message(websocket, {
+                                'type': 'subscribed',
+                                'channel': 'model_training',
+                                'message': 'Subscribed to model training updates'
+                            })
 
-                    else:
-                        await connection_manager.send_personal_message(websocket, {
-                            'type': 'error',
-                            'message': f'Unknown channel: {channel}'
-                        })
+                        else:
+                            await connection_manager.send_personal_message(websocket, {
+                                'type': 'error',
+                                'message': f'Unknown channel: {channel}'
+                            })
 
                 elif action == 'unsubscribe':
-                    channel = message.get('channel')
+                    # Support both 'channel' (string) and 'channels' (array)
+                    channels = message.get('channels', [])
+                    single_channel = message.get('channel')
+                    if single_channel:
+                        channels = [single_channel]
 
-                    if channel == 'data_collection':
-                        if websocket in connection_manager.data_collection_subscribers:
-                            connection_manager.data_collection_subscribers.remove(websocket)
-                        await connection_manager.send_personal_message(websocket, {
-                            'type': 'unsubscribed',
-                            'channel': 'data_collection',
-                            'message': 'Unsubscribed from data collection updates'
-                        })
+                    for channel in channels:
+                        if channel == 'data_collection':
+                            if websocket in connection_manager.data_collection_subscribers:
+                                connection_manager.data_collection_subscribers.remove(websocket)
+                            await connection_manager.send_personal_message(websocket, {
+                                'type': 'unsubscribed',
+                                'channel': 'data_collection',
+                                'message': 'Unsubscribed from data collection updates'
+                            })
 
-                    elif channel == 'model_training':
-                        if websocket in connection_manager.model_training_subscribers:
-                            connection_manager.model_training_subscribers.remove(websocket)
-                        await connection_manager.send_personal_message(websocket, {
-                            'type': 'unsubscribed',
-                            'channel': 'model_training',
-                            'message': 'Unsubscribed from model training updates'
-                        })
+                        elif channel == 'model_training':
+                            if websocket in connection_manager.model_training_subscribers:
+                                connection_manager.model_training_subscribers.remove(websocket)
+                            await connection_manager.send_personal_message(websocket, {
+                                'type': 'unsubscribed',
+                                'channel': 'model_training',
+                                'message': 'Unsubscribed from model training updates'
+                            })
 
                 elif action == 'ping':
                     await connection_manager.send_personal_message(websocket, {

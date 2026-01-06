@@ -20,6 +20,40 @@ from crypto_ml_trading.models.deep_learning.gru_attention.enhanced_trainer impor
 from crypto_ml_trading.models.deep_learning.cnn_pattern.cnn_model import CNNPatternRecognizer
 from crypto_ml_trading.models.deep_learning.cnn_pattern.enhanced_trainer import EnhancedCNNPatternTrainer
 from crypto_ml_trading.models.deep_learning.cnn_pattern.pattern_generator import PatternGenerator
+
+# New model imports for LSTM, Transformer, XGBoost, Random Forest, LightGBM, Prophet
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+
+try:
+    from prophet import Prophet
+    PROPHET_AVAILABLE = True
+except ImportError:
+    try:
+        from fbprophet import Prophet
+        PROPHET_AVAILABLE = True
+    except ImportError:
+        PROPHET_AVAILABLE = False
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+import pickle
 import logging
 
 logger = logging.getLogger(__name__)
@@ -256,6 +290,30 @@ async def train_model_task(
             logger.info(f"[{job_id}] Calling train_cnn_model...")
             results = await train_cnn_model(df, job_id, symbol, job, db)
             logger.info(f"[{job_id}] train_cnn_model completed, results: {results}")
+        elif model_name == "LSTM":
+            logger.info(f"[{job_id}] Calling train_lstm_model...")
+            results = await train_lstm_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_lstm_model completed, results: {results}")
+        elif model_name == "Transformer":
+            logger.info(f"[{job_id}] Calling train_transformer_model...")
+            results = await train_transformer_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_transformer_model completed, results: {results}")
+        elif model_name == "XGBoost":
+            logger.info(f"[{job_id}] Calling train_xgboost_model...")
+            results = await train_xgboost_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_xgboost_model completed, results: {results}")
+        elif model_name == "Random_Forest":
+            logger.info(f"[{job_id}] Calling train_random_forest_model...")
+            results = await train_random_forest_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_random_forest_model completed, results: {results}")
+        elif model_name == "LightGBM":
+            logger.info(f"[{job_id}] Calling train_lightgbm_model...")
+            results = await train_lightgbm_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_lightgbm_model completed, results: {results}")
+        elif model_name == "Prophet":
+            logger.info(f"[{job_id}] Calling train_prophet_model...")
+            results = await train_prophet_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_prophet_model completed, results: {results}")
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
@@ -603,4 +661,802 @@ async def train_cnn_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
 
     except Exception as e:
         logger.error(f"CNN training failed: {e}")
+        raise
+
+
+# ==================== LSTM Model Training ====================
+
+# Only define PyTorch classes if torch is available
+if TORCH_AVAILABLE:
+    class LSTMModel(nn.Module):
+        """LSTM model for time series classification."""
+
+        def __init__(self, input_size: int, hidden_size: int = 128, num_layers: int = 2,
+                     num_classes: int = 3, dropout: float = 0.2):
+            super(LSTMModel, self).__init__()
+            self.hidden_size = hidden_size
+            self.num_layers = num_layers
+
+            self.lstm = nn.LSTM(
+                input_size=input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                batch_first=True,
+                dropout=dropout if num_layers > 1 else 0
+            )
+
+            self.fc = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_size // 2, num_classes)
+            )
+
+        def forward(self, x):
+            # x shape: (batch, seq_len, features)
+            lstm_out, (h_n, c_n) = self.lstm(x)
+            # Use the last hidden state
+            out = self.fc(h_n[-1])
+            return out
+
+        def save(self, filepath: str):
+            torch.save({
+                'model_state_dict': self.state_dict(),
+                'input_size': self.lstm.input_size,
+                'hidden_size': self.hidden_size,
+                'num_layers': self.num_layers
+            }, filepath)
+
+        @classmethod
+        def load(cls, filepath: str):
+            checkpoint = torch.load(filepath)
+            model = cls(
+                input_size=checkpoint['input_size'],
+                hidden_size=checkpoint['hidden_size'],
+                num_layers=checkpoint['num_layers']
+            )
+            model.load_state_dict(checkpoint['model_state_dict'])
+            return model
+
+
+async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """Train LSTM model for trading signal classification."""
+    try:
+        if not TORCH_AVAILABLE:
+            raise ValueError("PyTorch is not available. Please install torch.")
+
+        logger.info("Training LSTM model")
+
+        # Create sequences
+        X, y = create_sequences(df, sequence_length=100)
+
+        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
+        job.progress = 55
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "LSTM", 55, "Sequences created, preparing data..."
+        )
+
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # Convert to tensors
+        X_train_t = torch.FloatTensor(X_train)
+        y_train_t = torch.LongTensor(y_train.astype(int))
+        X_val_t = torch.FloatTensor(X_val)
+        y_val_t = torch.LongTensor(y_val.astype(int))
+
+        # Create data loaders
+        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+
+        # Initialize model
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = LSTMModel(
+            input_size=X.shape[2],
+            hidden_size=128,
+            num_layers=2,
+            num_classes=3
+        ).to(device)
+
+        # Training setup
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "LSTM", 60, "Training LSTM model..."
+        )
+
+        # Training loop
+        best_val_acc = 0
+        epochs = 30
+        patience = 5
+        patience_counter = 0
+
+        for epoch in range(epochs):
+            model.train()
+            train_loss = 0
+
+            for batch_X, batch_y in train_loader:
+                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+
+                train_loss += loss.item()
+
+            # Validation
+            model.eval()
+            with torch.no_grad():
+                val_outputs = model(X_val_t.to(device))
+                val_loss = criterion(val_outputs, y_val_t.to(device)).item()
+                val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
+                val_acc = np.mean(val_preds == y_val)
+
+            scheduler.step(val_loss)
+
+            # Early stopping
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                patience_counter = 0
+                best_state = model.state_dict().copy()
+            else:
+                patience_counter += 1
+
+            if patience_counter >= patience:
+                logger.info(f"Early stopping at epoch {epoch + 1}")
+                break
+
+            # Update progress
+            progress = 60 + int((epoch / epochs) * 25)
+            job.progress = progress
+            db.commit()
+
+        # Load best model
+        model.load_state_dict(best_state)
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "LSTM", 85, "Model trained, evaluating..."
+        )
+
+        accuracy = best_val_acc * 100
+        logger.info(f"LSTM accuracy: {accuracy:.2f}%")
+
+        # Save model
+        model_path = Path("models") / symbol / "LSTM"
+        model_path.mkdir(parents=True, exist_ok=True)
+        model.save(str(model_path / "model.pt"))
+
+        return {
+            'model': model,
+            'accuracy': accuracy,
+            'epochs_trained': epoch + 1
+        }
+
+    except Exception as e:
+        logger.error(f"LSTM training failed: {e}")
+        raise
+
+
+# ==================== Transformer Model Training ====================
+
+# Only define TransformerClassifier if torch is available
+if TORCH_AVAILABLE:
+    class TransformerClassifier(nn.Module):
+        """Transformer model for time series classification."""
+
+        def __init__(self, input_size: int, d_model: int = 128, nhead: int = 4,
+                     num_layers: int = 2, num_classes: int = 3, dropout: float = 0.1):
+            super(TransformerClassifier, self).__init__()
+
+            self.input_size = input_size
+            self.d_model = d_model
+
+            # Input projection
+            self.input_projection = nn.Linear(input_size, d_model)
+
+            # Positional encoding
+            self.pos_encoder = nn.Parameter(torch.randn(1, 200, d_model) * 0.1)
+
+            # Transformer encoder
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=d_model * 4,
+                dropout=dropout,
+                batch_first=True
+            )
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+            # Classification head
+            self.classifier = nn.Sequential(
+                nn.Linear(d_model, d_model // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_model // 2, num_classes)
+            )
+
+        def forward(self, x):
+            # x: (batch, seq_len, features)
+            batch_size, seq_len, _ = x.shape
+
+            # Project input
+            x = self.input_projection(x)
+
+            # Add positional encoding
+            x = x + self.pos_encoder[:, :seq_len, :]
+
+            # Transformer encoding
+            x = self.transformer(x)
+
+            # Global average pooling
+            x = x.mean(dim=1)
+
+            # Classification
+            return self.classifier(x)
+
+        def save(self, filepath: str):
+            torch.save({
+                'model_state_dict': self.state_dict(),
+                'input_size': self.input_size,
+                'd_model': self.d_model
+            }, filepath)
+
+        @classmethod
+        def load(cls, filepath: str):
+            checkpoint = torch.load(filepath)
+            model = cls(
+                input_size=checkpoint['input_size'],
+                d_model=checkpoint['d_model']
+            )
+            model.load_state_dict(checkpoint['model_state_dict'])
+            return model
+
+
+async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """Train Transformer model for trading signal classification."""
+    try:
+        if not TORCH_AVAILABLE:
+            raise ValueError("PyTorch is not available. Please install torch.")
+
+        logger.info("Training Transformer model")
+
+        # Create sequences
+        X, y = create_sequences(df, sequence_length=100)
+
+        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
+        job.progress = 55
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Transformer", 55, "Sequences created, preparing data..."
+        )
+
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # Convert to tensors
+        X_train_t = torch.FloatTensor(X_train)
+        y_train_t = torch.LongTensor(y_train.astype(int))
+        X_val_t = torch.FloatTensor(X_val)
+        y_val_t = torch.LongTensor(y_val.astype(int))
+
+        # Create data loaders
+        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+
+        # Initialize model
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = TransformerClassifier(
+            input_size=X.shape[2],
+            d_model=128,
+            nhead=4,
+            num_layers=2,
+            num_classes=3
+        ).to(device)
+
+        # Training setup
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0.01)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Transformer", 60, "Training Transformer model..."
+        )
+
+        # Training loop
+        best_val_acc = 0
+        epochs = 30
+        patience = 5
+        patience_counter = 0
+
+        for epoch in range(epochs):
+            model.train()
+            train_loss = 0
+
+            for batch_X, batch_y in train_loader:
+                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+
+                train_loss += loss.item()
+
+            scheduler.step()
+
+            # Validation
+            model.eval()
+            with torch.no_grad():
+                val_outputs = model(X_val_t.to(device))
+                val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
+                val_acc = np.mean(val_preds == y_val)
+
+            # Early stopping
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                patience_counter = 0
+                best_state = model.state_dict().copy()
+            else:
+                patience_counter += 1
+
+            if patience_counter >= patience:
+                logger.info(f"Early stopping at epoch {epoch + 1}")
+                break
+
+            # Update progress
+            progress = 60 + int((epoch / epochs) * 25)
+            job.progress = progress
+            db.commit()
+
+        # Load best model
+        model.load_state_dict(best_state)
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Transformer", 85, "Model trained, evaluating..."
+        )
+
+        accuracy = best_val_acc * 100
+        logger.info(f"Transformer accuracy: {accuracy:.2f}%")
+
+        # Save model
+        model_path = Path("models") / symbol / "Transformer"
+        model_path.mkdir(parents=True, exist_ok=True)
+        model.save(str(model_path / "model.pt"))
+
+        return {
+            'model': model,
+            'accuracy': accuracy,
+            'epochs_trained': epoch + 1
+        }
+
+    except Exception as e:
+        logger.error(f"Transformer training failed: {e}")
+        raise
+
+
+# ==================== XGBoost Model Training ====================
+
+def prepare_features_for_ensemble(df: pd.DataFrame, sequence_length: int = 100) -> tuple:
+    """Prepare flattened features for ensemble models."""
+    # Get feature columns (all except signal)
+    feature_cols = [col for col in df.columns if col != 'signal']
+
+    X_list = []
+    y_list = []
+
+    for i in range(sequence_length, len(df)):
+        # Use rolling statistics instead of full sequence
+        window = df[feature_cols].iloc[i-sequence_length:i]
+
+        # Create feature vector with rolling statistics
+        features = []
+        for col in feature_cols:
+            features.extend([
+                window[col].iloc[-1],  # Current value
+                window[col].mean(),    # Mean
+                window[col].std(),     # Std
+                window[col].min(),     # Min
+                window[col].max(),     # Max
+                window[col].iloc[-1] - window[col].iloc[0],  # Change
+            ])
+
+        X_list.append(features)
+        y_list.append(df['signal'].iloc[i])
+
+    return np.array(X_list), np.array(y_list)
+
+
+async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """Train XGBoost model for trading signal classification."""
+    try:
+        if not XGBOOST_AVAILABLE:
+            raise ValueError("XGBoost is not available. Please install xgboost.")
+
+        logger.info("Training XGBoost model")
+
+        # Prepare features
+        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+        logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
+        job.progress = 55
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "XGBoost", 55, "Features prepared, training model..."
+        )
+
+        # Handle NaN/Inf values
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_scaled, y.astype(int), test_size=0.2, random_state=42
+        )
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "XGBoost", 60, "Training XGBoost classifier..."
+        )
+
+        # Train XGBoost
+        model = xgb.XGBClassifier(
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective='multi:softmax',
+            num_class=3,
+            random_state=42,
+            n_jobs=-1,
+            early_stopping_rounds=10,
+            eval_metric='mlogloss'
+        )
+
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=False
+        )
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "XGBoost", 85, "Model trained, evaluating..."
+        )
+
+        # Evaluate
+        val_preds = model.predict(X_val)
+        accuracy = np.mean(val_preds == y_val) * 100
+
+        logger.info(f"XGBoost accuracy: {accuracy:.2f}%")
+
+        # Save model and scaler
+        model_path = Path("models") / symbol / "XGBoost"
+        model_path.mkdir(parents=True, exist_ok=True)
+        model.save_model(str(model_path / "model.json"))
+
+        with open(model_path / "scaler.pkl", 'wb') as f:
+            pickle.dump(scaler, f)
+
+        return {
+            'accuracy': accuracy,
+            'n_estimators': model.n_estimators,
+            'feature_importance': model.feature_importances_.tolist()
+        }
+
+    except Exception as e:
+        logger.error(f"XGBoost training failed: {e}")
+        raise
+
+
+# ==================== Random Forest Model Training ====================
+
+async def train_random_forest_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """Train Random Forest model for trading signal classification."""
+    try:
+        logger.info("Training Random Forest model")
+
+        # Prepare features
+        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+        logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
+        job.progress = 55
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Random_Forest", 55, "Features prepared, training model..."
+        )
+
+        # Handle NaN/Inf values
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_scaled, y.astype(int), test_size=0.2, random_state=42
+        )
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Random_Forest", 60, "Training Random Forest classifier..."
+        )
+
+        # Train Random Forest
+        model = RandomForestClassifier(
+            n_estimators=200,
+            max_depth=15,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            max_features='sqrt',
+            random_state=42,
+            n_jobs=-1
+        )
+
+        model.fit(X_train, y_train)
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Random_Forest", 85, "Model trained, evaluating..."
+        )
+
+        # Evaluate
+        val_preds = model.predict(X_val)
+        accuracy = np.mean(val_preds == y_val) * 100
+
+        logger.info(f"Random Forest accuracy: {accuracy:.2f}%")
+
+        # Save model and scaler
+        model_path = Path("models") / symbol / "Random_Forest"
+        model_path.mkdir(parents=True, exist_ok=True)
+
+        with open(model_path / "model.pkl", 'wb') as f:
+            pickle.dump(model, f)
+
+        with open(model_path / "scaler.pkl", 'wb') as f:
+            pickle.dump(scaler, f)
+
+        return {
+            'accuracy': accuracy,
+            'n_estimators': model.n_estimators,
+            'feature_importance': model.feature_importances_.tolist()
+        }
+
+    except Exception as e:
+        logger.error(f"Random Forest training failed: {e}")
+        raise
+
+
+# ==================== LightGBM Model Training ====================
+
+async def train_lightgbm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """Train LightGBM model for trading signal classification."""
+    try:
+        if not LIGHTGBM_AVAILABLE:
+            raise ValueError("LightGBM is not available. Please install lightgbm.")
+
+        logger.info("Training LightGBM model")
+
+        # Prepare features
+        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+        logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
+        job.progress = 55
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "LightGBM", 55, "Features prepared, training model..."
+        )
+
+        # Handle NaN/Inf values
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_scaled, y.astype(int), test_size=0.2, random_state=42
+        )
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "LightGBM", 60, "Training LightGBM classifier..."
+        )
+
+        # Create LightGBM datasets
+        train_data = lgb.Dataset(X_train, label=y_train)
+        val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+
+        # Train LightGBM
+        params = {
+            'objective': 'multiclass',
+            'num_class': 3,
+            'metric': 'multi_logloss',
+            'boosting_type': 'gbdt',
+            'num_leaves': 31,
+            'learning_rate': 0.1,
+            'feature_fraction': 0.8,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 5,
+            'verbose': -1,
+            'random_state': 42
+        }
+
+        model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=200,
+            valid_sets=[val_data],
+            callbacks=[lgb.early_stopping(stopping_rounds=10, verbose=False)]
+        )
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "LightGBM", 85, "Model trained, evaluating..."
+        )
+
+        # Evaluate
+        val_preds = np.argmax(model.predict(X_val), axis=1)
+        accuracy = np.mean(val_preds == y_val) * 100
+
+        logger.info(f"LightGBM accuracy: {accuracy:.2f}%")
+
+        # Save model and scaler
+        model_path = Path("models") / symbol / "LightGBM"
+        model_path.mkdir(parents=True, exist_ok=True)
+        model.save_model(str(model_path / "model.txt"))
+
+        with open(model_path / "scaler.pkl", 'wb') as f:
+            pickle.dump(scaler, f)
+
+        return {
+            'accuracy': accuracy,
+            'num_iterations': model.num_trees(),
+            'feature_importance': model.feature_importance().tolist()
+        }
+
+    except Exception as e:
+        logger.error(f"LightGBM training failed: {e}")
+        raise
+
+
+# ==================== Prophet Model Training ====================
+
+async def train_prophet_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """Train Prophet model for price forecasting."""
+    try:
+        if not PROPHET_AVAILABLE:
+            raise ValueError("Prophet is not available. Please install prophet.")
+
+        logger.info("Training Prophet model")
+
+        # Prepare data for Prophet (requires 'ds' and 'y' columns)
+        prophet_df = pd.DataFrame({
+            'ds': df.index,
+            'y': df['close'].values
+        })
+
+        logger.info(f"Prepared Prophet data: {len(prophet_df)} records")
+        job.progress = 55
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Prophet", 55, "Data prepared, fitting Prophet model..."
+        )
+
+        # Split data for evaluation
+        train_size = int(len(prophet_df) * 0.8)
+        train_df = prophet_df[:train_size]
+        val_df = prophet_df[train_size:]
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Prophet", 60, "Training Prophet model..."
+        )
+
+        # Initialize and train Prophet
+        model = Prophet(
+            daily_seasonality=True,
+            weekly_seasonality=True,
+            yearly_seasonality=False,
+            changepoint_prior_scale=0.05,
+            seasonality_prior_scale=10.0
+        )
+
+        # Suppress Prophet output
+        import logging as lg
+        lg.getLogger('prophet').setLevel(lg.WARNING)
+        lg.getLogger('cmdstanpy').setLevel(lg.WARNING)
+
+        model.fit(train_df)
+
+        job.progress = 80
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Prophet", 80, "Model trained, evaluating forecasts..."
+        )
+
+        # Make predictions on validation set
+        future = model.make_future_dataframe(periods=len(val_df), freq='T')  # T for minute
+        forecast = model.predict(future)
+
+        # Get predictions for validation period
+        val_predictions = forecast[forecast['ds'].isin(val_df['ds'])]['yhat'].values
+        val_actuals = val_df['y'].values[:len(val_predictions)]
+
+        # Calculate MAPE
+        if len(val_predictions) > 0:
+            mape = np.mean(np.abs((val_actuals - val_predictions) / val_actuals)) * 100
+            accuracy = max(0, 100 - mape)
+        else:
+            accuracy = 50.0  # Default if no validation data
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Prophet", 85, "Saving model..."
+        )
+
+        logger.info(f"Prophet accuracy (100-MAPE): {accuracy:.2f}%")
+
+        # Save model
+        model_path = Path("models") / symbol / "Prophet"
+        model_path.mkdir(parents=True, exist_ok=True)
+
+        with open(model_path / "model.pkl", 'wb') as f:
+            pickle.dump(model, f)
+
+        return {
+            'accuracy': accuracy,
+            'mape': 100 - accuracy if accuracy < 100 else 0,
+            'training_samples': len(train_df)
+        }
+
+    except Exception as e:
+        logger.error(f"Prophet training failed: {e}")
         raise

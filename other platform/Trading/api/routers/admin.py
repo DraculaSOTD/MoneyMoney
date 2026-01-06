@@ -566,3 +566,90 @@ async def backfill_symbol_data(symbol: str, admin: AdminUser = Depends(get_curre
             "success": False,
             "error": str(e)
         }
+
+
+@router.post("/profiles/{profile_id}/collect-sentiment")
+async def collect_sentiment_data(
+    profile_id: int,
+    days_back: int = 30,
+    admin: AdminUser = Depends(get_current_admin)
+):
+    """
+    Collect and store sentiment data for a profile.
+    This data is used by models that benefit from sentiment analysis (LSTM, Transformer, etc.).
+    """
+    from services.sentiment_collector import sentiment_collector
+
+    db = SessionLocal()
+    try:
+        # Get profile
+        profile = db.query(TradingProfile).filter(TradingProfile.id == profile_id).first()
+
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Profile with id {profile_id} not found"
+            )
+
+        # Collect sentiment data
+        result = await sentiment_collector.collect_sentiment(
+            symbol=profile.symbol,
+            profile_id=profile_id,
+            days_back=days_back
+        )
+
+        logger.info(f"Sentiment collection completed for {profile.symbol} by {admin.username}")
+
+        return {
+            "success": True,
+            "message": f"Collected {result['records_created']} sentiment records",
+            **result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error collecting sentiment: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to collect sentiment: {str(e)}"
+        )
+    finally:
+        db.close()
+
+
+@router.get("/profiles/{profile_id}/sentiment")
+async def get_profile_sentiment(
+    profile_id: int,
+    admin: AdminUser = Depends(get_current_admin)
+):
+    """Get the latest sentiment data for a profile."""
+    from services.sentiment_collector import sentiment_collector
+
+    db = SessionLocal()
+    try:
+        profile = db.query(TradingProfile).filter(TradingProfile.id == profile_id).first()
+
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Profile with id {profile_id} not found"
+            )
+
+        sentiment = await sentiment_collector.get_latest_sentiment(profile.symbol)
+
+        if not sentiment:
+            return {
+                "symbol": profile.symbol,
+                "has_sentiment": False,
+                "message": "No sentiment data available. Run sentiment collection first."
+            }
+
+        return {
+            "symbol": profile.symbol,
+            "has_sentiment": True,
+            **sentiment
+        }
+
+    finally:
+        db.close()
