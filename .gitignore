@@ -14,10 +14,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # Database files (contains user data)
-database/
-*.db
-*.sqlite
-*.sqlite3
+#database/
+#*.db
+#*.sqlite
+#*.sqlite3
 
 # Environment variables
 .env
