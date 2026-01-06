@@ -1,9 +1,11 @@
-# Python
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+
+# Python virtual environments
 venv/
 .venv/
 
@@ -20,42 +22,38 @@ yarn-error.log*
 #*.sqlite3
 
 # Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+#.env
+#.env.local
+#.env.development.local
+#.env.test.local
+#.env.production.local
 
 # Logs
-logs
+logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
 
 # Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+#pids
+#*.pid
+#*.seed
+#*.pid.lock
 
 # Coverage directory used by tools like istanbul
-coverage/
-*.lcov
+#coverage/
+#*.lcov
 
 # nyc test coverage
-.nyc_output
+#.nyc_output
 
 # Dependency directories
 node_modules/
 jspm_packages/
 
 # Optional npm cache directory
-.npm
+#.npm
 
 # Optional eslint cache
-.eslintcache
+#.eslintcache
 
 # Microbundle cache
 .rpt2_cache/
@@ -118,6 +116,11 @@ desktop.ini
 # Windows reserved filenames (cannot be tracked by Git)
 nul
 NUL
+
+# Backup files
+*.backup
+*.bak
+.env.backup
 
 # Claude Code specific
 .claude/

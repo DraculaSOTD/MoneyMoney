@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/auth", tags=["admin-auth"])
 security = HTTPBearer()
 
-# Separate admin JWT secret (MUST be different from user JWT)
-ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "admin_trading_platform_secret_2024_change_in_prod")
+# Admin JWT secret - should match Node.js JWT_SECRET for cross-platform auth
+# Priority: ADMIN_JWT_SECRET > JWT_SECRET > default (matching Node.js default)
+ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET") or os.getenv("JWT_SECRET") or "tradingdashboard_jwt_secret_key_2024_change_in_production"
 ADMIN_JWT_ALGORITHM = "HS256"
 ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
 

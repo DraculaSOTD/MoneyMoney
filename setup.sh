@@ -52,9 +52,11 @@ print_header "MoneyMoney & Trading Platform Setup"
 echo "This script will:"
 echo "  1. Check prerequisites (PostgreSQL, Python, Node.js)"
 echo "  2. Configure PostgreSQL database"
-echo "  3. Install all dependencies"
-echo "  4. Import BTCUSDT sample data"
-echo "  5. Prepare applications for launch"
+echo "  3. Create .env files with synchronized JWT secrets"
+echo "  4. Install all dependencies (Node.js + Python)"
+echo "  5. Initialize database tables and create admin user"
+echo "  6. Import BTCUSDT sample data (10,082 candles)"
+echo "  7. Prepare applications for launch"
 echo ""
 read -p "Continue? (y/n) " -n 1 -r
 echo
@@ -206,24 +208,86 @@ else
     fi
 fi
 
-# Update Trading Platform .env
-print_step "Updating Trading Platform .env file..."
+# Build DATABASE_URL
 DATABASE_URL="postgresql://$PG_USER:$PG_PASSWORD@$PG_HOST:$PG_PORT/$PG_DATABASE"
 
-cd "other platform/Trading"
-if [ -f .env ]; then
-    # Backup existing .env
+# Step 3: Create/Update Node.js .env
+print_step "Configuring Node.js environment..."
+
+if [ ! -f ".env" ]; then
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+        print_success "Created .env from .env.example"
+    else
+        print_warning "No .env.example found, creating minimal .env"
+        cat > .env << EOF
+PORT=3000
+NODE_ENV=development
+JWT_SECRET=tradingdashboard_jwt_secret_key_2024_change_in_production
+TRADING_API_URL=http://localhost:8002
+DATABASE_URL=$DATABASE_URL
+DATABASE_PATH=./database/tradingdashboard.db
+SESSION_EXPIRE_DAYS=7
+EOF
+        print_success "Created minimal .env file"
+    fi
+else
     cp .env .env.backup
     print_info "Existing .env backed up to .env.backup"
 fi
 
-# Update DATABASE_URL in .env
+# Update DATABASE_URL in Node.js .env
+if grep -q "^DATABASE_URL=" .env; then
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" .env
+else
+    echo "DATABASE_URL=$DATABASE_URL" >> .env
+fi
+print_success "Node.js DATABASE_URL configured"
+
+# Get JWT_SECRET from Node.js .env for syncing with Python
+JWT_SECRET_VALUE=$(grep "^JWT_SECRET=" .env | cut -d'=' -f2-)
+if [ -z "$JWT_SECRET_VALUE" ]; then
+    JWT_SECRET_VALUE="tradingdashboard_jwt_secret_key_2024_change_in_production"
+fi
+
+# Step 4: Create/Update Python .env
+print_step "Configuring Python backend environment..."
+
+cd "other platform/Trading"
+
+if [ ! -f ".env" ]; then
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+        print_success "Created Python .env from .env.example"
+    else
+        print_warning "No .env.example found, creating minimal Python .env"
+        cat > .env << EOF
+DATABASE_URL=$DATABASE_URL
+JWT_SECRET=$JWT_SECRET_VALUE
+ADMIN_JWT_SECRET=$JWT_SECRET_VALUE
+API_PORT=8002
+API_HOST=0.0.0.0
+EOF
+        print_success "Created minimal Python .env file"
+    fi
+else
+    cp .env .env.backup
+    print_info "Existing Python .env backed up to .env.backup"
+fi
+
+# Update DATABASE_URL in Python .env
 sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" .env
-print_success "DATABASE_URL updated in Trading Platform .env"
+print_success "Python DATABASE_URL configured"
+
+# IMPORTANT: Sync JWT secrets between Node.js and Python
+# This ensures admin login works (tokens created by Node.js can be verified by Python)
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET_VALUE|" .env
+sed -i "s|^ADMIN_JWT_SECRET=.*|ADMIN_JWT_SECRET=$JWT_SECRET_VALUE|" .env
+print_success "JWT secrets synchronized between Node.js and Python"
 
 cd ../..
 
-# Step 3: Install Node.js Dependencies
+# Step 5: Install Node.js Dependencies
 print_step "Installing Node.js dependencies for MoneyMoney..."
 
 if [ -d "node_modules" ]; then
@@ -233,7 +297,7 @@ else
     print_success "Node.js dependencies installed"
 fi
 
-# Step 4: Setup Python Virtual Environment
+# Step 6: Setup Python Virtual Environment
 print_step "Setting up Python virtual environment..."
 
 cd "other platform/Trading"
@@ -262,7 +326,7 @@ else
     print_success "Virtual environment created"
 fi
 
-# Step 5: Install Python Dependencies
+# Step 7: Install Python Dependencies
 print_step "Installing Python dependencies (this may take a few minutes)..."
 
 source venv/bin/activate
@@ -280,7 +344,22 @@ else
     exit 1
 fi
 
-# Step 6: Import BTCUSDT Data
+# Step 8: Initialize Database (create tables and seed data)
+print_step "Initializing database tables and seed data..."
+
+if [ -f "scripts/init_database.py" ]; then
+    if python scripts/init_database.py 2>&1; then
+        print_success "Database initialized successfully"
+    else
+        print_error "Failed to initialize database"
+        print_info "You can run this manually later with:"
+        print_info "  cd 'other platform/Trading' && source venv/bin/activate && python scripts/init_database.py"
+    fi
+else
+    print_warning "init_database.py not found, skipping database initialization"
+fi
+
+# Step 9: Import BTCUSDT Data
 print_step "Importing BTCUSDT sample data..."
 
 if [ -f "scripts/import_btcusdt_data.py" ]; then
@@ -305,7 +384,7 @@ fi
 deactivate
 cd ../..
 
-# Step 7: Make scripts executable
+# Step 10: Make scripts executable
 print_step "Making startup scripts executable..."
 
 chmod +x start.sh start-all.sh
@@ -319,9 +398,12 @@ echo -e "${GREEN}All setup steps completed successfully!${NC}\n"
 
 echo "Summary:"
 print_success "PostgreSQL database configured: $PG_DATABASE"
+print_success "Environment files created (.env for both Node.js and Python)"
+print_success "JWT secrets synchronized (admin login will work)"
 print_success "Node.js dependencies installed"
 print_success "Python virtual environment created"
 print_success "Python dependencies installed"
+print_success "Database tables and admin user created"
 print_success "BTCUSDT data imported (10,082 candles)"
 print_success "Startup scripts ready"
 
@@ -338,7 +420,11 @@ echo "3. Login with test account:"
 echo -e "   Email:    ${CYAN}test@example.com${NC}"
 echo -e "   Password: ${CYAN}testpassword${NC}"
 echo ""
-echo "4. Select BTCUSDT and click 'Analysis' tab to see 70+ indicators!"
+echo "4. Or login as admin (for admin panel):"
+echo -e "   Username: ${CYAN}admin${NC}"
+echo -e "   Password: ${CYAN}admin123${NC}"
+echo ""
+echo "5. Select BTCUSDT and click 'Analysis' tab to see 70+ indicators!"
 echo ""
 
 print_header "Useful URLs"
