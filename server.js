@@ -12,7 +12,6 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const cookieParser = require('cookie-parser');
-// const dbBridge = require('./services/dbBridge'); // No longer needed - both use PostgreSQL
 const { spawn } = require('child_process');
 
 const app = express();
@@ -903,6 +902,8 @@ app.get('/api/instruments/:symbol/models', authenticateToken, async (req, res) =
     }
 });
 
+// TODO: Implement actual trading signals calculation from predictions/indicators
+// Currently returns default "hold" signal - backend integration pending
 // Get trading signals for an instrument (proxy to Trading Platform)
 app.get('/api/instruments/:symbol/signals', authenticateToken, async (req, res) => {
     try {
@@ -958,6 +959,8 @@ app.get('/api/instruments/:symbol/stats', authenticateToken, async (req, res) =>
     }
 });
 
+// TODO: Implement sentiment analysis backend integration
+// Currently returns placeholder neutral sentiment data
 // Get sentiment for an instrument (returns placeholder - sentiment not yet implemented)
 app.get('/api/instruments/:symbol/sentiment', authenticateToken, async (req, res) => {
     try {
@@ -1545,10 +1548,4 @@ app.listen(PORT, () => {
     // Start Python backend
     console.log('\\nStarting Python backend...');
     startPythonBackend();
-
-    // Database bridge service no longer needed - both Node.js and Python use PostgreSQL
-    // console.log('\\nStarting database synchronization service...');
-    // setTimeout(() => {
-    //     dbBridge.start();
-    // }, 3000);
 });

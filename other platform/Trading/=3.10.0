@@ -1,2 +1,0 @@
-Requirement already satisfied: apscheduler in ./venv/lib/python3.13/site-packages (3.11.1)
-Requirement already satisfied: tzlocal>=3.0 in ./venv/lib/python3.13/site-packages (from apscheduler) (5.3.1)
