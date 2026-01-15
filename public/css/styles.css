@@ -10,7 +10,7 @@ Generated based on the provided landing page design.
 :root {
     /* Colors */
     --color-background: #0C0B10;
-    --color-primary-accent: #E1007A; /* Magenta/Pink */
+    --color-primary-accent: #3B82F6; /* Blue */
     --color-secondary-accent: #3B82F6; /* Blue */
     --color-text-primary: #FFFFFF;
     --color-text-secondary: #B0B0B0;
@@ -199,7 +199,7 @@ a:hover {
 
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(225, 0, 122, 0.3);
+    box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3);
     color: var(--color-text-primary);
 }
 
@@ -896,7 +896,7 @@ a:hover {
     content: '';
     width: 40px;
     height: 40px;
-    border: 3px solid rgba(225, 0, 122, 0.3);
+    border: 3px solid rgba(59, 130, 246, 0.3);
     border-top-color: var(--color-primary-accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;

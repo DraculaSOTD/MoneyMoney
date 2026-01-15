@@ -11,7 +11,10 @@ let state = {
     models: [],
     trainingHistory: [],
     activeTab: 'overview',
-    isTraining: false
+    isTraining: false,
+    trainingPollingInterval: null,
+    trainingJobIds: [],
+    trainingConfirmed: false  // Tracks if polling has confirmed training started
 };
 
 // Initialize on page load
@@ -29,15 +32,24 @@ async function initializePage() {
     // Connect WebSocket
     websocketService.connect();
 
-    // Wait for connection and subscribe to model training channel
+    // Subscribe to model training channel after receiving welcome message
+    // The /ws/admin endpoint sends a welcome message upon connection
+    websocketService.on('welcome', (data) => {
+        console.log('WebSocket welcome received, subscribing to model_training channel...');
+        websocketService.subscribe(['model_training']);
+    });
+
+    // Handle subscription confirmation
+    websocketService.on('subscribed', (data) => {
+        if (data.channel === 'model_training') {
+            console.log('Successfully subscribed to model_training channel');
+        }
+    });
+
+    // Fallback: Also try subscribing on connectionStatus in case welcome was missed
     websocketService.on('connectionStatus', (connected) => {
         if (connected) {
-            console.log('WebSocket connected, subscribing to model_training channel...');
-            // Add small delay to ensure WebSocket handshake is complete
-            setTimeout(() => {
-                websocketService.subscribe(['model_training']);
-                console.log('Subscription request sent for model_training channel');
-            }, 100);
+            console.log('WebSocket connected, will subscribe after welcome message');
         }
     });
 
@@ -207,7 +219,7 @@ function renderTrainingHistory() {
     container.innerHTML = state.trainingHistory.map(history => `
         <div class="history-item">
             <div class="history-header">
-                <span class="history-title">${history.model_name} - Run #${history.id}</span>
+                <span class="history-title">${getModelName(history.model_id)} - Run #${history.id}</span>
                 ${getStatusBadge(history.status)}
             </div>
             <div class="history-details">
@@ -221,7 +233,7 @@ function renderTrainingHistory() {
                 </div>
                 <div class="history-detail-item">
                     <span class="history-detail-label">Accuracy</span>
-                    <span class="history-detail-value">${history.accuracy ? (history.accuracy * 100).toFixed(2) + '%' : 'N/A'}</span>
+                    <span class="history-detail-value">${history.val_accuracy ? history.val_accuracy.toFixed(2) + '%' : 'N/A'}</span>
                 </div>
             </div>
         </div>
@@ -249,7 +261,12 @@ function getStatusBadge(status) {
 
 function formatPerformance(value) {
     if (value === null || value === undefined) return 'N/A';
-    return (value * 100).toFixed(2);
+    return value.toFixed(2);
+}
+
+function getModelName(modelId) {
+    const model = state.models.find(m => m.id === modelId);
+    return model ? model.model_name : 'Unknown Model';
 }
 
 function formatDuration(seconds) {
@@ -330,6 +347,7 @@ function openTrainingDialog() {
 function closeTrainingDialog() {
     document.getElementById('trainingDialog').style.display = 'none';
     state.isTraining = false;
+    stopTrainingPolling();
 }
 
 async function startTraining() {
@@ -348,6 +366,7 @@ async function startTraining() {
 
     // Reset model progress tracking for new training session
     state.modelProgress = {};
+    state.trainingJobIds = [];
 
     // Hide start button, show progress
     document.getElementById('startTrainingBtn').style.display = 'none';
@@ -364,14 +383,33 @@ async function startTraining() {
             selectedModels
         );
 
-        showNotification(`Training started for ${selectedModels.length} models`, 'success');
+        // Store job IDs for polling (may be empty on timeout/network error)
+        if (response && response.job_ids) {
+            state.trainingJobIds = response.job_ids;
+        }
+
+        // Handle timeout or network error - don't show error, just start polling
+        if (response.timedOut || response.networkError) {
+            const warningMsg = response.timedOut
+                ? 'Request timed out. Training may have started, checking status...'
+                : 'Network error occurred. Checking training status...';
+            showNotification(warningMsg, 'warning');
+        } else {
+            showNotification(`Training started for ${selectedModels.length} models`, 'success');
+        }
 
         // Update progress UI
         document.getElementById('trainingStatus').textContent = `Training ${selectedModels.length} models...`;
         document.getElementById('trainingPercent').textContent = '0%';
         document.getElementById('trainingProgressBar').style.width = '0%';
 
+        // Start polling for training status as a fallback - this will pick up progress
+        // even if the initial request had issues
+        startTrainingPolling();
+
     } catch (error) {
+        // This catch block should rarely be reached now since api-service handles most errors gracefully
+        console.error('Unexpected training error:', error);
         showNotification('Failed to start training: ' + error.message, 'error');
         closeTrainingDialog();
     }
@@ -413,6 +451,8 @@ function handleTrainingCompleted(data) {
     console.log('Training completed:', data);
 
     state.isTraining = false;
+    state.trainingConfirmed = false;
+    stopTrainingPolling();
 
     // Update progress to 100%
     document.getElementById('trainingPercent').textContent = '100%';
@@ -434,12 +474,123 @@ function handleTrainingFailed(data) {
     console.error('Training failed:', data);
 
     state.isTraining = false;
+    state.trainingConfirmed = false;
+    stopTrainingPolling();
 
     // Reset model progress tracking
     state.modelProgress = {};
 
     showNotification('Training failed: ' + (data.error || data.message || 'Unknown error'), 'error');
     closeTrainingDialog();
+}
+
+// Polling fallback for training status
+function startTrainingPolling() {
+    // Stop any existing polling
+    stopTrainingPolling();
+
+    console.log('Starting training status polling as fallback...');
+
+    // Poll every 3 seconds
+    state.trainingPollingInterval = setInterval(async () => {
+        if (!state.isTraining || !state.selectedProfile) {
+            stopTrainingPolling();
+            return;
+        }
+
+        try {
+            const allJobs = await apiService.getTrainingJobs(state.selectedProfile.symbol);
+
+            if (!Array.isArray(allJobs) || allJobs.length === 0) {
+                return;
+            }
+
+            // Filter jobs to only current session to avoid counting historical jobs
+            // This fixes the bug where denominator keeps increasing (2/5, 2/7, 2/9, etc.)
+            let jobs;
+            if (state.trainingJobIds && state.trainingJobIds.length > 0) {
+                // Filter to only jobs from current training session
+                jobs = allJobs.filter(job => state.trainingJobIds.includes(job.job_id));
+            } else {
+                // Fallback: if no job IDs stored (timeout scenario), only use active jobs
+                // This prevents counting old completed/failed jobs from previous sessions
+                jobs = allJobs.filter(job => job.status === 'running' || job.status === 'pending');
+            }
+
+            if (jobs.length === 0) {
+                return;
+            }
+
+            // Calculate aggregate progress
+            let totalProgress = 0;
+            let runningJobs = 0;
+            let completedJobs = 0;
+            let failedJobs = 0;
+            let currentModelName = '';
+            let currentStatus = '';
+
+            for (const job of jobs) {
+                if (job.status === 'running' || job.status === 'pending') {
+                    runningJobs++;
+                    totalProgress += job.progress || 0;
+                    if (job.status === 'running') {
+                        currentModelName = job.model_name;
+                        currentStatus = job.status;
+                    }
+                } else if (job.status === 'completed') {
+                    completedJobs++;
+                    totalProgress += 100;
+                } else if (job.status === 'failed') {
+                    failedJobs++;
+                }
+            }
+
+            const totalJobs = jobs.length;
+            const averageProgress = totalJobs > 0 ? Math.floor(totalProgress / totalJobs) : 0;
+
+            // If we have running jobs and haven't confirmed yet, show success notification
+            if (runningJobs > 0 && !state.trainingConfirmed) {
+                state.trainingConfirmed = true;
+                showNotification('Training confirmed - progress updates active', 'success');
+            }
+
+            // Update UI with polled data
+            document.getElementById('trainingPercent').textContent = `${averageProgress}%`;
+            document.getElementById('trainingProgressBar').style.width = `${averageProgress}%`;
+
+            const statusText = currentModelName
+                ? `Training ${currentModelName}... (${completedJobs}/${totalJobs} completed)`
+                : `Training in progress... (${completedJobs}/${totalJobs} completed)`;
+            document.getElementById('trainingStatus').textContent = statusText;
+
+            // Check if all jobs are done (only if we have jobs to check)
+            if (totalJobs > 0 && runningJobs === 0 && (completedJobs + failedJobs) === totalJobs) {
+                stopTrainingPolling();
+
+                if (failedJobs === totalJobs) {
+                    // All failed
+                    handleTrainingFailed({ error: 'All training jobs failed' });
+                } else {
+                    // Some or all completed
+                    handleTrainingCompleted({
+                        message: `Training completed! ${completedJobs} succeeded, ${failedJobs} failed.`
+                    });
+                }
+            }
+
+        } catch (error) {
+            console.error('Error polling training status:', error);
+            // Don't stop polling on error, just log it
+        }
+    }, 3000);
+}
+
+function stopTrainingPolling() {
+    if (state.trainingPollingInterval) {
+        clearInterval(state.trainingPollingInterval);
+        state.trainingPollingInterval = null;
+        console.log('Stopped training status polling');
+    }
 }
 
 // Model Action Functions
@@ -495,6 +646,7 @@ function viewModelDetails(modelId) {
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
+    stopTrainingPolling();
     websocketService.off('modelTrainingProgress', handleTrainingProgress);
     websocketService.off('modelTrainingCompleted', handleTrainingCompleted);
     websocketService.off('modelTrainingFailed', handleTrainingFailed);

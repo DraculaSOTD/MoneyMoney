@@ -111,10 +111,10 @@ async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(
     token = credentials.credentials
     payload = verify_admin_token(token)
 
-    # Get admin from database
+    # Get admin from database by email (works across Node.js and Python user tables)
     db = SessionLocal()
     try:
-        admin = db.query(AdminUser).filter(AdminUser.id == int(payload["sub"])).first()
+        admin = db.query(AdminUser).filter(AdminUser.email == payload["email"]).first()
         if not admin:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -142,10 +142,10 @@ async def get_current_admin_from_token(token: str):
     """Get admin from JWT token string (for WebSocket authentication)"""
     payload = verify_admin_token(token)
 
-    # Get admin from database
+    # Get admin from database by email (works across Node.js and Python user tables)
     db = SessionLocal()
     try:
-        admin = db.query(AdminUser).filter(AdminUser.id == int(payload["sub"])).first()
+        admin = db.query(AdminUser).filter(AdminUser.email == payload["email"]).first()
         if not admin:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -26,7 +26,7 @@ class AdminManager:
                 # Create default superuser
                 default_admin = AdminUser(
                     username="admin",
-                    email="admin@tradingplatform.local",
+                    email="admin@trading.com",
                     password_hash=AdminManager.hash_password("admin123"),  # CHANGE IN PRODUCTION!
                     full_name="Default Admin",
                     is_superuser=True,
@@ -37,7 +37,7 @@ class AdminManager:
                 db.commit()
 
                 logger.warning(
-                    "DEFAULT ADMIN CREATED: username='admin', password='admin123' - "
+                    "DEFAULT ADMIN CREATED: email='admin@trading.com', password='admin123' - "
                     "CHANGE PASSWORD IMMEDIATELY IN PRODUCTION!"
                 )
 

@@ -384,7 +384,10 @@ class MultiHeadAttention:
             self.db_q = np.sum(dQ.reshape(-1, d_model), axis=0)
             self.db_k = np.sum(dK.reshape(-1, d_model), axis=0)
             self.db_v = np.sum(dV.reshape(-1, d_model), axis=0)
-        
+
+        # Clear forward cache to free memory after backward pass completes
+        self._forward_cache = {}
+
         return dquery, dkey, dvalue
 
 

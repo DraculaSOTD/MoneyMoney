@@ -550,7 +550,21 @@ class GRUAttentionModel:
         self.training = training
         self.gru.set_training(training)
         self.attention.set_training(training)
-        
+
+    def clear_caches(self):
+        """Clear all internal caches to free memory after backward pass."""
+        # Clear GRU caches
+        if hasattr(self, 'gru') and hasattr(self.gru, 'cells'):
+            for cell in self.gru.cells:
+                if hasattr(cell, '_caches'):
+                    cell._caches = []
+                if hasattr(cell, '_cache'):
+                    cell._cache = {}
+
+        # Clear attention caches
+        if hasattr(self, 'attention') and hasattr(self.attention, '_forward_cache'):
+            self.attention._forward_cache = {}
+
     def save_model(self, filepath: str):
         """Save model parameters."""
         np.savez(filepath, **self.params)
@@ -590,3 +604,11 @@ class GRUAttentionModel:
             'attention_entropy': entropy,
             'attention_concentration': 1 - entropy / np.log(avg_attention.shape[-1])
         }
+
+    def save(self, filepath: str):
+        """Save model parameters (alias for save_model)."""
+        self.save_model(filepath)
+
+    def load(self, filepath: str):
+        """Load model parameters (alias for load_model)."""
+        self.load_model(filepath)

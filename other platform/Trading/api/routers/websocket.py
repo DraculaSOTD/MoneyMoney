@@ -134,8 +134,13 @@ async def admin_websocket_endpoint(
 
         # Keep connection alive and handle messages
         while True:
-            # Receive message from client
-            data = await websocket.receive_text()
+            # Receive message from client with timeout
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+            except asyncio.TimeoutError:
+                # Send ping to keep connection alive during long operations
+                await connection_manager.send_personal_message(websocket, {'type': 'ping'})
+                continue
 
             try:
                 message = json.loads(data)
@@ -235,7 +240,11 @@ async def admin_websocket_endpoint(
         connection_manager.disconnect(websocket)
 
     except Exception as e:
-        logger.error(f"WebSocket error for {client_id}: {e}")
+        # Log at debug level for connection-related errors (common during rapid reconnects)
+        if "not connected" in str(e).lower() or "close message" in str(e).lower():
+            logger.debug(f"WebSocket connection closed for {client_id}: {e}")
+        else:
+            logger.error(f"WebSocket error for {client_id}: {e}")
         connection_manager.disconnect(websocket)
 
 
@@ -289,7 +298,11 @@ async def data_collection_websocket(
         connection_manager.disconnect(websocket)
 
     except Exception as e:
-        logger.error(f"Data collection WebSocket error: {e}")
+        # Log at debug level for connection-related errors
+        if "not connected" in str(e).lower() or "close message" in str(e).lower():
+            logger.debug(f"Data collection WebSocket closed for {client_id}: {e}")
+        else:
+            logger.error(f"Data collection WebSocket error: {e}")
         connection_manager.disconnect(websocket)
 
 
@@ -343,7 +356,11 @@ async def model_training_websocket(
         connection_manager.disconnect(websocket)
 
     except Exception as e:
-        logger.error(f"Model training WebSocket error: {e}")
+        # Log at debug level for connection-related errors
+        if "not connected" in str(e).lower() or "close message" in str(e).lower():
+            logger.debug(f"Model training WebSocket closed for {client_id}: {e}")
+        else:
+            logger.error(f"Model training WebSocket error: {e}")
         connection_manager.disconnect(websocket)
 
 

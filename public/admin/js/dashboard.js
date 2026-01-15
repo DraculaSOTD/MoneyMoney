@@ -393,7 +393,7 @@ function renderChart() {
 
     // Add line series
     state.chartSeries = state.chart.addLineSeries({
-        color: '#E1007A',
+        color: '#3B82F6',
         lineWidth: 2,
     });
 
@@ -435,7 +435,7 @@ function renderModelsAndPredictions() {
         `;
 
         state.models.slice(0, 3).forEach(model => {
-            const accuracy = model.test_accuracy ? (model.test_accuracy * 100).toFixed(1) : 'N/A';
+            const accuracy = model.test_accuracy ? model.test_accuracy.toFixed(1) : 'N/A';
             html += `
                 <div class="model-item">
                     <div class="model-name">${model.model_name}</div>

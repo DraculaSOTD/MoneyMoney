@@ -194,23 +194,34 @@ class BinanceConnector:
         }
 
         # Add optional time range parameters
+        # Database stores timestamps as UTC, so we need to treat naive datetimes as UTC
+        # Otherwise Python's .timestamp() treats them as local time (causing timezone shift)
+        from datetime import timezone
         if start_time:
+            # If naive datetime, assume it's UTC
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
             params['startTime'] = int(start_time.timestamp() * 1000)
         if end_time:
+            # If naive datetime, assume it's UTC
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
             params['endTime'] = int(end_time.timestamp() * 1000)
 
+        logger.debug(f"get_klines request: symbol={symbol}, startTime={params.get('startTime')}, endTime={params.get('endTime')}, limit={limit}")
         data = await self._request('GET', '/api/v3/klines', params)
+        logger.debug(f"get_klines response: received {len(data)} candles")
         
         klines = []
         for kline_data in data:
             klines.append(Kline(
-                open_time=datetime.fromtimestamp(kline_data[0] / 1000),
+                open_time=datetime.utcfromtimestamp(kline_data[0] / 1000),
                 open=Decimal(kline_data[1]),
                 high=Decimal(kline_data[2]),
                 low=Decimal(kline_data[3]),
                 close=Decimal(kline_data[4]),
                 volume=Decimal(kline_data[5]),
-                close_time=datetime.fromtimestamp(kline_data[6] / 1000),
+                close_time=datetime.utcfromtimestamp(kline_data[6] / 1000),
                 quote_volume=Decimal(kline_data[7]),
                 trades=int(kline_data[8])
             ))
@@ -337,13 +348,13 @@ class BinanceConnector:
                     if data['e'] == 'kline':
                         kline_data = data['k']
                         kline = Kline(
-                            open_time=datetime.fromtimestamp(kline_data['t'] / 1000),
+                            open_time=datetime.utcfromtimestamp(kline_data['t'] / 1000),
                             open=Decimal(kline_data['o']),
                             high=Decimal(kline_data['h']),
                             low=Decimal(kline_data['l']),
                             close=Decimal(kline_data['c']),
                             volume=Decimal(kline_data['v']),
-                            close_time=datetime.fromtimestamp(kline_data['T'] / 1000),
+                            close_time=datetime.utcfromtimestamp(kline_data['T'] / 1000),
                             quote_volume=Decimal(kline_data['q']),
                             trades=int(kline_data['n'])
                         )
@@ -406,14 +417,102 @@ class BinanceConnector:
                 logger.error(f"Keepalive error: {e}")
                 
     async def get_historical_data(self, symbol: str, interval: str = '1m',
-                                 days_back: int = 30) -> pd.DataFrame:
+                                 days_back: int = 30, progress_callback=None) -> pd.DataFrame:
         """
-        Fetch historical kline data. Default interval is 1m (1 minute).
+        Fetch historical kline data with pagination for large date ranges.
+        Default interval is 1m (1 minute).
         IMPORTANT: For the trading system, ALWAYS use 1m intervals.
         Other timeframes should be aggregated from 1m data.
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            interval: Kline interval (default '1m')
+            days_back: Number of days of historical data to fetch
+            progress_callback: Optional async callback(current, total) for progress updates
         """
-        klines = await self.get_klines(symbol, interval, limit=1000)
-        
+        from datetime import timedelta
+
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(days=days_back)
+
+        all_klines = []
+        current_start = start_time
+        batch_size = 1000
+
+        # Calculate approximate total batches for progress reporting
+        minutes_per_day = 1440  # 24 * 60
+        total_minutes = days_back * minutes_per_day
+        total_batches = (total_minutes // batch_size) + 1
+        batch_count = 0
+
+        logger.info(f"Fetching {days_back} days of {interval} data for {symbol} (approx {total_batches} batches)")
+
+        max_retries = 3
+        consecutive_failures = 0
+        max_consecutive_failures = 5
+
+        while current_start < end_time:
+            batch_count += 1
+            retry_count = 0
+            batch_success = False
+
+            while retry_count < max_retries and not batch_success:
+                try:
+                    klines = await self.get_klines(
+                        symbol, interval,
+                        limit=batch_size,
+                        start_time=current_start,
+                        end_time=end_time
+                    )
+
+                    if not klines:
+                        logger.info(f"No more klines returned at batch {batch_count}")
+                        batch_success = True  # Empty is valid, we're done
+                        break
+
+                    all_klines.extend(klines)
+
+                    # Move start to after the last candle received
+                    last_candle_time = klines[-1].open_time
+                    current_start = last_candle_time + timedelta(minutes=1)
+
+                    # Progress callback
+                    if progress_callback:
+                        await progress_callback(batch_count, total_batches)
+
+                    # Log progress every 100 batches
+                    if batch_count % 100 == 0:
+                        logger.info(f"Fetched batch {batch_count}/{total_batches}, total klines: {len(all_klines)}")
+
+                    # Rate limiting to avoid hitting Binance API limits
+                    await asyncio.sleep(0.1)
+                    batch_success = True
+                    consecutive_failures = 0  # Reset on success
+
+                except Exception as e:
+                    retry_count += 1
+                    logger.warning(f"Error fetching batch {batch_count}, retry {retry_count}/{max_retries}: {e}")
+                    if retry_count < max_retries:
+                        await asyncio.sleep(1)  # Wait before retry
+
+            if not batch_success:
+                consecutive_failures += 1
+                logger.error(f"Failed batch {batch_count} after {max_retries} retries, skipping to next batch")
+                # Skip ahead by batch_size minutes to try next batch
+                current_start = current_start + timedelta(minutes=batch_size)
+
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.error(f"Too many consecutive failures ({consecutive_failures}), stopping")
+                    break
+
+            if batch_success and not klines:
+                break  # No more data available
+
+        logger.info(f"Finished fetching {len(all_klines)} klines for {symbol}")
+
+        if not all_klines:
+            return pd.DataFrame()
+
         df = pd.DataFrame([{
             'timestamp': k.open_time,
             'open': float(k.open),
@@ -423,7 +522,103 @@ class BinanceConnector:
             'volume': float(k.volume),
             'quote_volume': float(k.quote_volume),
             'trades': k.trades
-        } for k in klines])
-        
+        } for k in all_klines])
+
+        df.set_index('timestamp', inplace=True)
+        return df
+
+    async def fill_gap(self, symbol: str, gap_start: datetime, gap_end: datetime,
+                       progress_callback=None) -> pd.DataFrame:
+        """
+        Fetch data for a specific time gap.
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTCUSDT')
+            gap_start: Start of the gap (timestamp of last candle before gap)
+            gap_end: End of the gap (timestamp of first candle after gap)
+            progress_callback: Optional async callback(current, total) for progress updates
+
+        Returns:
+            DataFrame with candles to fill the gap
+        """
+        from datetime import timedelta
+
+        # Start fetching from 1 minute after gap_start
+        fetch_start = gap_start + timedelta(minutes=1)
+        fetch_end = gap_end
+
+        all_klines = []
+        current_start = fetch_start
+        batch_size = 1000
+        batch_count = 0
+        max_retries = 3
+
+        # Calculate expected candles
+        expected_minutes = int((fetch_end - fetch_start).total_seconds() / 60)
+        total_batches = max(1, (expected_minutes // batch_size) + 1)
+
+        logger.info(f"Filling gap for {symbol}: {fetch_start} to {fetch_end} (~{expected_minutes} candles)")
+
+        while current_start < fetch_end:
+            batch_count += 1
+            retry_count = 0
+            klines = []  # Initialize before retry loop
+
+            while retry_count < max_retries:
+                try:
+                    klines = await self.get_klines(
+                        symbol, '1m',
+                        limit=batch_size,
+                        start_time=current_start,
+                        end_time=fetch_end
+                    )
+
+                    if not klines:
+                        logger.info(f"No more klines returned at batch {batch_count}")
+                        break
+
+                    all_klines.extend(klines)
+
+                    # Move start to after the last candle received
+                    last_candle_time = klines[-1].open_time
+                    current_start = last_candle_time + timedelta(minutes=1)
+
+                    # Progress callback
+                    if progress_callback:
+                        await progress_callback(batch_count, total_batches)
+
+                    # Rate limiting
+                    await asyncio.sleep(0.1)
+                    break  # Success, exit retry loop
+
+                except Exception as e:
+                    retry_count += 1
+                    logger.warning(f"Error fetching gap batch {batch_count}, retry {retry_count}/{max_retries}: {e}")
+                    if retry_count < max_retries:
+                        await asyncio.sleep(1)  # Wait before retry
+                    else:
+                        logger.error(f"Failed to fetch batch {batch_count} after {max_retries} retries")
+                        # Continue to next batch instead of breaking
+                        current_start = current_start + timedelta(minutes=batch_size)
+
+            if not klines:
+                break
+
+        logger.info(f"Fetched {len(all_klines)} candles to fill gap for {symbol}")
+
+        if not all_klines:
+            return pd.DataFrame()
+
+        df = pd.DataFrame([{
+            'timestamp': k.open_time,
+            'open': float(k.open),
+            'high': float(k.high),
+            'low': float(k.low),
+            'close': float(k.close),
+            'volume': float(k.volume),
+            'quote_volume': float(k.quote_volume),
+            'trades': k.trades
+        } for k in all_klines])
+
         df.set_index('timestamp', inplace=True)
         return df

@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-from models.statistical.garch.garch_model import GARCH, EGARCH
+from models.statistical.garch.garch_model import GARCH, EGARCH, GJRGARCH
+from models.statistical.garch.har_rv import HARRV
 
 
 class VolatilityForecaster:
@@ -57,6 +58,10 @@ class VolatilityForecaster:
                 model = GARCH(p=1, q=1, dist='t')
             elif model_type == 'egarch':
                 model = EGARCH(p=1, q=1, dist='t')
+            elif model_type == 'gjr' or model_type == 'gjr-garch':
+                model = GJRGARCH(p=1, q=1, dist='t')
+            elif model_type == 'har' or model_type == 'har-rv':
+                model = HARRV(periods=[60, 1440, 10080])
             else:
                 continue
                 
@@ -122,7 +127,208 @@ class VolatilityForecaster:
             'model_forecasts': all_forecasts,
             'weights': weights
         }
-    
+
+    def optimize_ensemble_weights(self, returns: np.ndarray,
+                                  validation_window: int = 500) -> Dict[str, float]:
+        """
+        Optimize ensemble weights using recent prediction errors.
+
+        Uses variance minimization to find weights that minimize
+        the mean squared error of ensemble forecasts.
+
+        Args:
+            returns: Return series for validation
+            validation_window: Number of periods for validation
+
+        Returns:
+            Dictionary of optimized weights
+        """
+        from scipy.optimize import minimize
+
+        if not self.models:
+            raise ValueError("No models fitted")
+
+        n_models = len(self.models)
+        model_names = list(self.models.keys())
+
+        # Generate forecasts from each model
+        forecasts = {}
+        for name, model in self.models.items():
+            try:
+                forecast = model.forecast(steps=validation_window)
+                forecasts[name] = forecast['volatility']
+            except Exception:
+                # If model can't forecast, exclude it
+                forecasts[name] = np.zeros(validation_window)
+
+        # Compute realized volatility as target
+        realized_vol = np.abs(returns[-validation_window:])
+
+        # Optimization objective: minimize MSE
+        def ensemble_mse(weights):
+            weights = np.abs(weights)  # Ensure non-negative
+            weights = weights / weights.sum()  # Normalize
+
+            ensemble = np.zeros(validation_window)
+            for i, name in enumerate(model_names):
+                ensemble += weights[i] * forecasts[name][:validation_window]
+
+            mse = np.mean((ensemble - realized_vol) ** 2)
+            return mse
+
+        # Initial weights: equal
+        x0 = np.ones(n_models) / n_models
+
+        # Optimize
+        result = minimize(
+            ensemble_mse,
+            x0,
+            method='SLSQP',
+            bounds=[(0, 1)] * n_models,
+            constraints={'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+        )
+
+        # Extract optimized weights
+        optimal_weights = np.abs(result.x)
+        optimal_weights = optimal_weights / optimal_weights.sum()
+
+        return {name: w for name, w in zip(model_names, optimal_weights)}
+
+    def get_regime_weights(self, regime: str) -> Dict[str, float]:
+        """
+        Get model weights based on volatility regime.
+
+        Different models perform better in different market conditions:
+        - Crisis/High volatility: EGARCH and GJR capture asymmetry better
+        - Normal/Low volatility: GARCH sufficient, HAR-RV stable
+
+        Args:
+            regime: One of 'low', 'normal', 'high', 'extreme'
+
+        Returns:
+            Dictionary of regime-specific weights
+        """
+        # Default weights by regime
+        # These are based on empirical research showing asymmetric models
+        # outperform during high volatility periods
+        regime_weights = {
+            'low': {
+                'garch': 0.35,
+                'egarch': 0.15,
+                'gjr': 0.15,
+                'har': 0.35
+            },
+            'normal': {
+                'garch': 0.30,
+                'egarch': 0.20,
+                'gjr': 0.20,
+                'har': 0.30
+            },
+            'high': {
+                'garch': 0.15,
+                'egarch': 0.30,
+                'gjr': 0.30,
+                'har': 0.25
+            },
+            'extreme': {
+                'garch': 0.10,
+                'egarch': 0.35,
+                'gjr': 0.35,
+                'har': 0.20
+            }
+        }
+
+        base_weights = regime_weights.get(regime, regime_weights['normal'])
+
+        # Filter to only include models that are actually fitted
+        available_weights = {
+            k: v for k, v in base_weights.items()
+            if k in self.models or k == 'gjr' and 'gjr-garch' in self.models
+        }
+
+        # Normalize weights
+        total = sum(available_weights.values())
+        if total > 0:
+            available_weights = {k: v / total for k, v in available_weights.items()}
+
+        return available_weights
+
+    def forecast_with_dynamic_weights(self, returns: np.ndarray,
+                                       steps: int = 1,
+                                       use_regime: bool = True) -> Dict:
+        """
+        Generate ensemble forecast with dynamically computed weights.
+
+        Args:
+            returns: Recent return series for regime detection and weight optimization
+            steps: Forecast horizon
+            use_regime: Whether to use regime-based weights
+
+        Returns:
+            Dictionary with ensemble forecasts and weights used
+        """
+        if not self.models:
+            raise ValueError("No models fitted")
+
+        if use_regime:
+            # Detect current regime
+            regime = self._detect_regime(returns)
+            weights = self.get_regime_weights(regime)
+        else:
+            # Optimize weights
+            try:
+                weights = self.optimize_ensemble_weights(returns)
+            except Exception:
+                # Fall back to equal weights
+                weights = {name: 1.0 / len(self.models) for name in self.models}
+
+        # Generate forecast with computed weights
+        forecast = self.forecast_ensemble(steps=steps, weights=weights)
+
+        # Add regime info if applicable
+        if use_regime:
+            forecast['regime'] = regime
+
+        return forecast
+
+    def _detect_regime(self, returns: np.ndarray) -> str:
+        """
+        Detect current volatility regime.
+
+        Uses percentile-based thresholds on rolling volatility.
+
+        Args:
+            returns: Return series
+
+        Returns:
+            Regime string: 'low', 'normal', 'high', or 'extreme'
+        """
+        # Compute recent volatility (last 60 periods = 1 hour)
+        recent_vol = np.std(returns[-60:]) if len(returns) >= 60 else np.std(returns)
+
+        # Compute historical volatility percentiles
+        if len(returns) >= 1000:
+            rolling_vol = pd.Series(returns).rolling(60).std().dropna()
+            p25 = np.percentile(rolling_vol, 25)
+            p75 = np.percentile(rolling_vol, 75)
+            p95 = np.percentile(rolling_vol, 95)
+        else:
+            # Use defaults for short series
+            overall_vol = np.std(returns)
+            p25 = overall_vol * 0.7
+            p75 = overall_vol * 1.3
+            p95 = overall_vol * 2.0
+
+        # Classify regime
+        if recent_vol < p25:
+            return 'low'
+        elif recent_vol < p75:
+            return 'normal'
+        elif recent_vol < p95:
+            return 'high'
+        else:
+            return 'extreme'
+
     def calculate_term_structure(self, horizons: List[int] = None) -> pd.DataFrame:
         """
         Calculate volatility term structure.

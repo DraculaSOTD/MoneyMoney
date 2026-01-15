@@ -28,21 +28,27 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="/admin/data-collection" class="nav-link">
-                            <i class="fas fa-cloud-download-alt"></i>
-                            <span>Data Collection</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a href="/admin/data-management" class="nav-link active">
                             <i class="fas fa-database"></i>
                             <span>Data Management</span>
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a href="/admin/data-collection" class="nav-link">
+                            <i class="fas fa-cloud-download-alt"></i>
+                            <span>Data Collection</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a href="/admin/models" class="nav-link">
                             <i class="fas fa-brain"></i>
                             <span>ML Models</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" style="margin-top: 30px; border-top: 1px solid var(--color-card-border); padding-top: 15px;">
+                        <a href="#" class="nav-link" onclick="logout()" style="color: #ef4444;">
+                            <i class="fas fa-sign-out-alt"></i>
+                            <span>Logout</span>
                         </a>
                     </li>
                 </ul>
@@ -140,68 +146,28 @@
 
                 <!-- Data Quality Tab -->
                 <div id="tab-quality" class="tab-content">
-                    <!-- Profile Selector -->
-                    <div class="quality-controls glassmorphism" style="margin-bottom: 1.5rem; padding: 1rem;">
-                        <label for="qualityProfileSelect" style="margin-right: 0.5rem; font-weight: 500;">Select Profile:</label>
-                        <select id="qualityProfileSelect" style="padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid var(--primary-color); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.95rem;">
-                            <option value="">-- Choose a profile --</option>
-                        </select>
-                    </div>
-
-                    <!-- Quality Summary Cards -->
+                    <!-- All Profiles Quality Table -->
                     <div id="qualitySummary" style="display: none;">
-                        <div class="quality-summary-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-                            <div class="quality-card glassmorphism">
-                                <div class="quality-card-icon"><i class="fas fa-database"></i></div>
-                                <div class="quality-card-value" id="totalRecords">0</div>
-                                <div class="quality-card-label">Total Records</div>
-                            </div>
-                            <div class="quality-card glassmorphism">
-                                <div class="quality-card-icon"><i class="fas fa-chart-pie"></i></div>
-                                <div class="quality-card-value" id="completeness">0%</div>
-                                <div class="quality-card-label">Data Completeness</div>
-                            </div>
-                            <div class="quality-card glassmorphism">
-                                <div class="quality-card-icon"><i class="fas fa-star"></i></div>
-                                <div class="quality-card-value quality-score" id="qualityScore">-</div>
-                                <div class="quality-card-label">Quality Score</div>
-                            </div>
-                            <div class="quality-card glassmorphism">
-                                <div class="quality-card-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                                <div class="quality-card-value" id="missingData">0</div>
-                                <div class="quality-card-label">Missing Candles</div>
-                            </div>
-                            <div class="quality-card glassmorphism">
-                                <div class="quality-card-icon"><i class="fas fa-chart-line"></i></div>
-                                <div class="quality-card-value" id="outliers">0</div>
-                                <div class="quality-card-label">Outliers Detected</div>
-                            </div>
-                            <div class="quality-card glassmorphism">
-                                <div class="quality-card-icon"><i class="fas fa-calendar-alt"></i></div>
-                                <div class="quality-card-value" id="dateRange" style="font-size: 0.85rem;">-</div>
-                                <div class="quality-card-label">Date Range</div>
-                            </div>
-                        </div>
-
-                        <!-- Data Table -->
                         <div class="data-table-container glassmorphism" style="padding: 1.5rem;">
                             <h3 style="margin-bottom: 1rem; color: var(--text-primary);">
-                                <i class="fas fa-table"></i> Market Data Preview (First 100 Rows)
+                                <i class="fas fa-check-circle"></i> Data Quality Overview - All Profiles
                             </h3>
                             <div class="scrollable-table-wrapper">
-                                <table id="marketDataTable" class="data-table">
+                                <table id="qualityTable" class="data-table">
                                     <thead>
                                         <tr>
-                                            <th>Timestamp</th>
-                                            <th>Open</th>
-                                            <th>High</th>
-                                            <th>Low</th>
-                                            <th>Close</th>
-                                            <th>Volume</th>
-                                            <th>Trades</th>
+                                            <th>Profile Name</th>
+                                            <th>Symbol</th>
+                                            <th>Total Records</th>
+                                            <th>Completeness</th>
+                                            <th>Quality Score</th>
+                                            <th>Missing Candles</th>
+                                            <th>Outliers</th>
+                                            <th>Date Range</th>
+                                            <th>Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="marketDataBody">
+                                    <tbody id="qualityTableBody">
                                         <!-- Populated by JavaScript -->
                                     </tbody>
                                 </table>
@@ -209,10 +175,16 @@
                         </div>
                     </div>
 
+                    <!-- Loading State -->
+                    <div id="qualityLoading" class="empty-state-small" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading data quality metrics...</p>
+                    </div>
+
                     <!-- Empty State -->
                     <div id="noQuality" class="empty-state-small">
                         <i class="fas fa-check-circle"></i>
-                        <p>Select a profile to view data quality metrics</p>
+                        <p>No profiles with data found</p>
                     </div>
                 </div>            </div>
         </main>
@@ -897,5 +869,13 @@
             color: var(--color-error);
         }
     </style>
+    <script>
+        function logout() {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('token');
+            sessionStorage.clear();
+            window.location.href = '/auth?mode=login';
+        }
+    </script>
 </body>
 </html>

@@ -240,7 +240,7 @@ async function updateChart(symbol, timeframe) {
 
     // Create gradient for line
     const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-    gradient.addColorStop(0, 'rgba(225, 0, 122, 0.8)');
+    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.8)');
     gradient.addColorStop(1, 'rgba(59, 130, 246, 0.2)');
 
     // Create chart
@@ -251,14 +251,14 @@ async function updateChart(symbol, timeframe) {
             datasets: [{
                 label: `${symbol} Price`,
                 data: prices,
-                borderColor: '#E1007A',
+                borderColor: '#3B82F6',
                 backgroundColor: gradient,
                 borderWidth: 2,
                 fill: true,
                 tension: 0.4,
                 pointRadius: 0,
                 pointHoverRadius: 5,
-                pointHoverBackgroundColor: '#E1007A',
+                pointHoverBackgroundColor: '#3B82F6',
                 pointHoverBorderColor: '#FFFFFF',
                 pointHoverBorderWidth: 2
             }]
@@ -278,7 +278,7 @@ async function updateChart(symbol, timeframe) {
                     backgroundColor: 'rgba(12, 11, 16, 0.95)',
                     titleColor: '#FFFFFF',
                     bodyColor: '#B0B0B0',
-                    borderColor: 'rgba(225, 0, 122, 0.5)',
+                    borderColor: 'rgba(59, 130, 246, 0.5)',
                     borderWidth: 1,
                     padding: 12,
                     displayColors: false,
@@ -399,7 +399,7 @@ function displayModels(models) {
 
     models.forEach(model => {
         const isDeployed = model.is_deployed;
-        const accuracy = model.accuracy ? (model.accuracy * 100).toFixed(1) : 'N/A';
+        const accuracy = model.accuracy ? model.accuracy.toFixed(1) : 'N/A';
         const modelType = model.model_type || 'Unknown';
         const trainedDate = model.trained_at ? new Date(model.trained_at).toLocaleDateString() : 'N/A';
         const statusClass = isDeployed ? 'deployed' : 'inactive';
@@ -652,8 +652,8 @@ function showSubscriptionExpiredMessage() {
         banner = document.createElement('div');
         banner.id = 'subscriptionBanner';
         banner.style.cssText = `
-            background: linear-gradient(90deg, rgba(225, 0, 122, 0.2), rgba(59, 130, 246, 0.2));
-            border: 1px solid rgba(225, 0, 122, 0.5);
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.2));
+            border: 1px solid rgba(59, 130, 246, 0.5);
             border-radius: 8px;
             padding: 16px 20px;
             margin-bottom: 20px;
@@ -664,7 +664,7 @@ function showSubscriptionExpiredMessage() {
         `;
         banner.innerHTML = `
             <div>
-                <strong style="color: #E1007A;">Subscription Expired</strong>
+                <strong style="color: #3B82F6;">Subscription Expired</strong>
                 <p style="margin: 5px 0 0 0; color: #B0B0B0; font-size: 14px;">
                     Your subscription has expired. Renew to access trading data and predictions.
                 </p>

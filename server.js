@@ -10,7 +10,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 const cookieParser = require('cookie-parser');
 const { spawn } = require('child_process');
 
@@ -102,12 +102,26 @@ app.use(helmet({
 app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static('public'));
 
-// Rate limiting
+// Serve static files with no-cache headers for development
+// This ensures the browser always gets fresh JavaScript files
+app.use(express.static('public', {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res, path) => {
+        // Disable caching for JavaScript files
+        if (path.endsWith('.js')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
+
+// Rate limiting - increased for dashboard with continuous polling
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    max: 500 // limit each IP to 500 requests per windowMs (~33/min for polling dashboards)
 });
 app.use('/api/', limiter);
 
@@ -682,11 +696,41 @@ async function createTestAccount() {
     }
 }
 
+// Create admin account
+async function createAdminAccount() {
+    try {
+        // Check if admin account already exists
+        const result = await db.query('SELECT * FROM users WHERE email = $1', ['admin@trading.com']);
+
+        if (result.rows.length === 0) {
+            // Create admin account with hashed password
+            const saltRounds = 12;
+            const passwordHash = await bcrypt.hash('admin123', saltRounds);
+
+            await db.query(
+                'INSERT INTO users (email, password_hash, role, full_name, subscription_status) VALUES ($1, $2, $3, $4, $5)',
+                ['admin@trading.com', passwordHash, 'admin', 'Admin User', 'active']
+            );
+
+            console.log('Admin account created successfully:');
+            console.log('  Email: admin@trading.com');
+            console.log('  Password: admin123');
+        } else {
+            console.log('Admin account already exists: admin@trading.com');
+        }
+    } catch (error) {
+        console.error('Error with admin account:', error);
+    }
+}
+
 // Populate sample data
 async function populateSampleData() {
     try {
         // Create test account
         await createTestAccount();
+
+        // Create admin account
+        await createAdminAccount();
 
         // Check if instruments data already exists
         const instrumentsResult = await db.query('SELECT COUNT(*) as count FROM instruments');
@@ -893,7 +937,28 @@ app.get('/api/instruments/:symbol/models', authenticateToken, async (req, res) =
             `${TRADING_API_URL}/api/profiles/${profile.id}/models`
         );
 
-        res.json(response.data);
+        // Transform field names from API format to frontend expected format
+        const transformedModels = response.data.map(model => ({
+            id: model.id,
+            profile_id: model.profile_id,
+            name: model.model_name,                    // model_name → name
+            model_type: model.model_type,
+            model_version: model.model_version,
+            status: model.status,
+            accuracy: model.test_accuracy || model.validation_accuracy,  // test_accuracy → accuracy
+            trained_at: model.last_trained,            // last_trained → trained_at
+            is_deployed: model.is_deployed,
+            is_primary: model.is_primary,
+            features_used: model.features,
+            hyperparameters: model.hyperparameters,
+            // Keep original fields too for compatibility
+            model_name: model.model_name,
+            test_accuracy: model.test_accuracy,
+            validation_accuracy: model.validation_accuracy,
+            last_trained: model.last_trained
+        }));
+
+        res.json(transformedModels);
 
     } catch (error) {
         console.error('Error fetching models:', error.message);
@@ -1519,13 +1584,78 @@ app.get('/subscription-success', (req, res) => {
     res.sendFile(path.join(__dirname, 'views', 'subscription-success.html'));
 });
 
+// Debug middleware to log all /api requests before proxy
+// This helps trace requests that don't make it to the proxy
+app.use('/api', (req, res, next) => {
+    console.log(`[API Request] ${req.method} ${req.originalUrl} (body: ${JSON.stringify(req.body).substring(0, 100)})`);
+    next();
+});
+
+// ==================== Explicit Admin API Routes ====================
+// These routes bypass the proxy to avoid body-parsing issues with POST requests
+// The http-proxy-middleware has issues with express.json() consuming the request body
+
+// Model training POST - explicit route to bypass proxy body parsing issue
+app.post('/api/admin/models/train/:symbol', authenticateToken, async (req, res) => {
+    try {
+        const { symbol } = req.params;
+        const token = req.headers.authorization;
+
+        console.log(`[Training Route] POST /admin/models/train/${symbol}`);
+        console.log(`[Training Route] Body: ${JSON.stringify(req.body)}`);
+
+        const response = await axios.post(
+            `${TRADING_API_URL}/admin/models/train/${symbol}`,
+            req.body,
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token
+                },
+                timeout: 300000  // 5 minute timeout for long training
+            }
+        );
+
+        res.status(response.status).json(response.data);
+    } catch (error) {
+        console.error('[Training Route] Error:', error.message);
+        if (error.response) {
+            res.status(error.response.status).json(error.response.data);
+        } else {
+            res.status(500).json({ error: 'Training API unavailable', message: error.message });
+        }
+    }
+});
+
 // Proxy /api/* requests to Python backend (MUST be after Express API routes)
 // This catches any /api/* requests that weren't handled by Express routes above
 app.use('/api', createProxyMiddleware({
     target: TRADING_API_URL,
     changeOrigin: true,
     ws: true, // Enable WebSocket proxying
-    logLevel: 'silent',
+    logLevel: 'debug',  // Enable debug logging to see proxy requests
+    proxyTimeout: 300000,  // 5 minutes - needed for long-running requests like model training
+    timeout: 300000,       // 5 minutes
+    onProxyReq: (proxyReq, req, res) => {
+        console.log(`[Proxy] ${req.method} ${req.path} -> ${TRADING_API_URL}${req.path}`);
+
+        // Forward Authorization header for admin API authentication
+        if (req.headers.authorization) {
+            proxyReq.setHeader('Authorization', req.headers.authorization);
+            console.log(`[Proxy] Forwarding Authorization header`);
+        }
+
+        // Use fixRequestBody to handle body-parsed requests
+        // This is required because express.json() consumes the request stream
+        // and the proxy would otherwise hang waiting for body data
+        fixRequestBody(proxyReq, req);
+        if (req.body && Object.keys(req.body).length > 0) {
+            console.log(`[Proxy] Forwarding body: ${JSON.stringify(req.body).substring(0, 200)}`);
+        }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+        console.log(`[Proxy Response] ${req.method} ${req.path} -> ${proxyRes.statusCode}`);
+    },
     onError: (err, req, res) => {
         console.error('API proxy error:', err.message);
         res.status(500).json({

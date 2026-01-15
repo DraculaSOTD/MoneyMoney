@@ -428,19 +428,23 @@ class MultiLayerGRU:
     def forward(self, x: np.ndarray, hidden_states: Optional[list] = None) -> Tuple[np.ndarray, list]:
         """
         Forward pass through all layers.
-        
+
         Args:
             x: Input sequence (batch_size, seq_length, input_size)
             hidden_states: Initial hidden states for each layer
-            
+
         Returns:
             Tuple of (output, final_hidden_states)
         """
         batch_size, seq_length, _ = x.shape
-        
+
         if hidden_states is None:
             hidden_states = [None] * self.num_layers
-            
+
+        # Clear caches at start of forward pass to prevent memory accumulation
+        for cell in self.cells:
+            cell._caches = []
+
         outputs = []
         layer_outputs = [[] for _ in range(self.num_layers)]
         
@@ -455,9 +459,7 @@ class MultiLayerGRU:
                 layer_outputs[layer_idx].append(h)
                 x_t = h  # Output becomes input to next layer
                 
-                # Store cache for this timestep
-                if not hasattr(cell, '_caches'):
-                    cell._caches = []
+                # Store cache for this timestep (list cleared at start of forward)
                 cell._caches.append(gates['cache'])
                 
             outputs.append(x_t)

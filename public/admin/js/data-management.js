@@ -423,114 +423,139 @@ async function preprocessProfile(symbol) {
 // ==================== DATA QUALITY TAB FUNCTIONS ====================
 
 async function initQualityTab() {
-    // Populate profile selector
-    const select = document.getElementById('qualityProfileSelect');
-    if (!select) return;
-
-    // Clear existing options except first
-    select.innerHTML = '<option value="">-- Choose a profile --</option>';
-
-    // Add profiles that have data
-    state.profiles
-        .filter(p => p.has_data)
-        .forEach(profile => {
-            const option = document.createElement('option');
-            option.value = profile.symbol;
-            option.textContent = `${profile.symbol} - ${profile.name}`;
-            select.appendChild(option);
-        });
-
-    // Add change event listener
-    select.addEventListener('change', async (e) => {
-        const symbol = e.target.value;
-        if (symbol) {
-            await loadDataQuality(symbol);
-        } else {
-            // Show empty state
-            document.getElementById('qualitySummary').style.display = 'none';
-            document.getElementById('noQuality').style.display = 'block';
-        }
-    });
+    // Auto-load data quality for all profiles
+    await loadAllDataQuality();
 }
 
-async function loadDataQuality(symbol) {
+async function loadAllDataQuality() {
     try {
         // Show loading state
-        showLoading();
+        const loadingEl = document.getElementById('qualityLoading');
+        const summaryEl = document.getElementById('qualitySummary');
+        const noQualityEl = document.getElementById('noQuality');
 
-        // Fetch quality metrics and data preview in parallel
-        const [qualityData, previewData] = await Promise.all([
-            apiService.getDataQuality(symbol),
-            apiService.getMarketDataPreview(symbol, 100)
-        ]);
+        if (loadingEl) loadingEl.style.display = 'block';
+        if (summaryEl) summaryEl.style.display = 'none';
+        if (noQualityEl) noQualityEl.style.display = 'none';
 
-        // Hide empty state, show summary
-        document.getElementById('noQuality').style.display = 'none';
-        document.getElementById('qualitySummary').style.display = 'block';
+        // Fetch quality metrics for all profiles
+        const response = await apiService.getAllDataQuality();
 
-        // Render quality summary
-        renderQualitySummary(qualityData);
+        if (loadingEl) loadingEl.style.display = 'none';
 
-        // Render data table
-        renderDataTable(previewData);
+        if (!response.profiles || response.profiles.length === 0) {
+            // Show empty state
+            if (noQualityEl) noQualityEl.style.display = 'block';
+            return;
+        }
 
-        hideLoading();
+        // Show summary table
+        if (summaryEl) summaryEl.style.display = 'block';
+
+        // Render all profiles quality table
+        renderAllProfilesQuality(response.profiles);
+
     } catch (error) {
-        hideLoading();
+        const loadingEl = document.getElementById('qualityLoading');
+        const noQualityEl = document.getElementById('noQuality');
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (noQualityEl) noQualityEl.style.display = 'block';
         showNotification(`Failed to load data quality: ${error.message}`, 'error');
     }
 }
 
-function renderQualitySummary(data) {
-    // Update Total Records
-    document.getElementById('totalRecords').textContent = data.total_records.toLocaleString();
+function renderAllProfilesQuality(profiles) {
+    const tbody = document.getElementById('qualityTableBody');
+    if (!tbody) return;
 
-    // Update Completeness
-    document.getElementById('completeness').textContent = `${data.completeness_pct}%`;
-
-    // Update Quality Score with color coding
-    const scoreEl = document.getElementById('qualityScore');
-    scoreEl.textContent = data.quality_score;
-    scoreEl.setAttribute('data-grade', data.quality_score);
-
-    // Update Missing Data
-    document.getElementById('missingData').textContent = data.missing_data_points.toLocaleString();
-
-    // Update Outliers
-    document.getElementById('outliers').textContent = data.outlier_count.toLocaleString();
-
-    // Update Date Range
-    if (data.date_range && data.date_range.first && data.date_range.last) {
-        const firstDate = new Date(data.date_range.first).toLocaleDateString();
-        const lastDate = new Date(data.date_range.last).toLocaleDateString();
-        document.getElementById('dateRange').textContent = `${firstDate} → ${lastDate}`;
-    } else {
-        document.getElementById('dateRange').textContent = '-';
-    }
-}
-
-function renderDataTable(data) {
-    const tbody = document.getElementById('marketDataBody');
     tbody.innerHTML = '';
 
-    if (!data.data || data.data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem;">No data available</td></tr>';
+    if (!profiles || profiles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No profiles with data found</td></tr>';
         return;
     }
 
-    data.data.forEach(row => {
+    profiles.forEach(profile => {
         const tr = document.createElement('tr');
+
+        // Format date range
+        let dateRangeText = '-';
+        if (profile.date_range && profile.date_range.first && profile.date_range.last) {
+            const firstDate = new Date(profile.date_range.first).toLocaleDateString();
+            const lastDate = new Date(profile.date_range.last).toLocaleDateString();
+            dateRangeText = `${firstDate} → ${lastDate}`;
+        }
+
+        // Get quality score color class
+        const scoreClass = getQualityScoreClass(profile.quality_score);
+
+        // Generate actions cell - show Fill Gaps button only if there are missing candles
+        let actionsHtml = '-';
+        if (profile.missing_data_points > 0) {
+            actionsHtml = `
+                <button class="btn btn-sm btn-warning" onclick="fillGaps('${profile.symbol}')" title="Fill ${profile.missing_data_points.toLocaleString()} missing candles">
+                    <i class="fas fa-wrench"></i> Fill Gaps
+                </button>
+            `;
+        }
+
         tr.innerHTML = `
-            <td>${row.timestamp}</td>
-            <td>${formatPrice(row.open)}</td>
-            <td>${formatPrice(row.high)}</td>
-            <td>${formatPrice(row.low)}</td>
-            <td>${formatPrice(row.close)}</td>
-            <td>${formatVolume(row.volume)}</td>
-            <td>${row.number_of_trades.toLocaleString()}</td>
+            <td>${profile.profile_name}</td>
+            <td><strong>${profile.symbol}</strong></td>
+            <td>${profile.total_records.toLocaleString()}</td>
+            <td>${profile.completeness_pct}%</td>
+            <td><span class="quality-badge ${scoreClass}">${profile.quality_score}</span></td>
+            <td>${profile.missing_data_points.toLocaleString()}</td>
+            <td>${profile.outlier_count.toLocaleString()}</td>
+            <td style="font-size: 0.85rem;">${dateRangeText}</td>
+            <td>${actionsHtml}</td>
         `;
         tbody.appendChild(tr);
     });
+}
+
+async function fillGaps(symbol) {
+    // Find the button for this symbol and show loading state
+    const buttons = document.querySelectorAll(`button[onclick="fillGaps('${symbol}')"]`);
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Filling...';
+    });
+
+    try {
+        const result = await apiService.fillDataGaps(symbol);
+
+        if (result.gaps_filled === 0) {
+            showNotification(`No gaps found for ${symbol}`, 'info');
+        } else {
+            showNotification(
+                `Successfully filled ${result.gaps_filled} gaps (${result.total_candles_added.toLocaleString()} candles) for ${symbol}`,
+                'success'
+            );
+        }
+
+        // Reload the quality table to show updated metrics
+        await loadAllDataQuality();
+
+    } catch (error) {
+        showNotification(`Failed to fill gaps for ${symbol}: ${error.message}`, 'error');
+        // Re-enable buttons on error
+        buttons.forEach(btn => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-wrench"></i> Fill Gaps';
+        });
+    }
+}
+
+function getQualityScoreClass(score) {
+    switch (score) {
+        case 'A': return 'quality-a';
+        case 'B': return 'quality-b';
+        case 'C': return 'quality-c';
+        case 'D': return 'quality-d';
+        case 'F': return 'quality-f';
+        default: return '';
+    }
 }
 
 function formatPrice(price) {

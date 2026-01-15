@@ -5,7 +5,7 @@
 
 class APIService {
     constructor() {
-        this.baseUrl = 'http://localhost:8002';
+        this.baseUrl = '/api';
     }
 
     getAuthHeaders() {
@@ -245,17 +245,50 @@ class APIService {
     }
 
     async startModelTraining(symbol, models = null) {
+        // Create AbortController for timeout - 60 seconds to allow for slow training initialization
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+
         try {
             const body = models ? { symbol, models } : { symbol };
 
             const response = await fetch(`${this.baseUrl}/admin/models/train/${symbol}`, {
                 method: 'POST',
                 headers: this.getAuthHeaders(),
-                body: JSON.stringify(body)
+                body: JSON.stringify(body),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
             return await this.handleResponse(response);
         } catch (error) {
+            clearTimeout(timeoutId);
+
+            // Handle timeout - training may have started even if request timed out
+            if (error.name === 'AbortError') {
+                console.warn('Training request timed out, but training may have started in the background');
+                return {
+                    job_ids: [],
+                    symbol: symbol,
+                    models: models || [],
+                    message: 'Training request timed out. Checking status...',
+                    timedOut: true
+                };
+            }
+
+            // Handle NetworkError - also don't fail completely, training might have started
+            if (error.message && error.message.includes('NetworkError')) {
+                console.warn('Network error during training request, but training may have started');
+                return {
+                    job_ids: [],
+                    symbol: symbol,
+                    models: models || [],
+                    message: 'Network error occurred. Checking training status...',
+                    networkError: true
+                };
+            }
+
+            console.error('Training request error:', error);
             return this.handleError(error);
         }
     }
@@ -276,6 +309,23 @@ class APIService {
     async getSymbolModelStatus(symbol) {
         try {
             const response = await fetch(`${this.baseUrl}/admin/models/status/${symbol}`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            return await this.handleResponse(response);
+        } catch (error) {
+            return this.handleError(error);
+        }
+    }
+
+    async getTrainingJobs(symbol = null) {
+        try {
+            const url = symbol
+                ? `${this.baseUrl}/admin/models/status/${symbol}`
+                : `${this.baseUrl}/admin/models/status`;
+
+            const response = await fetch(url, {
                 method: 'GET',
                 headers: this.getAuthHeaders()
             });
@@ -502,6 +552,19 @@ class APIService {
 
     // ==================== Data Quality ====================
 
+    async getAllDataQuality() {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/data-quality/all`, {
+                method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            return await this.handleResponse(response);
+        } catch (error) {
+            return this.handleError(error);
+        }
+    }
+
     async getDataQuality(symbol) {
         try {
             const response = await fetch(`${this.baseUrl}/api/data-quality/${symbol}`, {
@@ -532,6 +595,19 @@ class APIService {
         try {
             const response = await fetch(`${this.baseUrl}/admin/data/summary`, {
                 method: 'GET',
+                headers: this.getAuthHeaders()
+            });
+
+            return await this.handleResponse(response);
+        } catch (error) {
+            return this.handleError(error);
+        }
+    }
+
+    async fillDataGaps(symbol) {
+        try {
+            const response = await fetch(`${this.baseUrl}/admin/data/fill-gaps/${symbol}`, {
+                method: 'POST',
                 headers: this.getAuthHeaders()
             });
 

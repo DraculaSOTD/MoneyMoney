@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
 import warnings
+import gc
 
 
 class GARCHUtils:
@@ -54,44 +55,49 @@ class GARCHUtils:
                           max_q: int = 3, ic: str = 'bic') -> Tuple[int, int]:
         """
         Select optimal GARCH order using information criteria.
-        
+        Memory-optimized: deletes models after evaluation to prevent memory buildup.
+
         Args:
             returns: Return series
             max_p: Maximum GARCH order
             max_q: Maximum ARCH order
             ic: Information criterion ('aic' or 'bic')
-            
+
         Returns:
             Tuple of (p, q) optimal orders
         """
         from models.statistical.garch.garch_model import GARCH
-        
+
         best_order = (1, 1)
         best_ic = np.inf
         results = []
-        
+
         for p in range(1, max_p + 1):
             for q in range(1, max_q + 1):
                 try:
                     model = GARCH(p=p, q=q, dist='t')
                     model.fit(returns)
-                    
+
                     ic_value = model.aic if ic == 'aic' else model.bic
-                    
+
                     results.append({
                         'order': (p, q),
                         'aic': model.aic,
                         'bic': model.bic,
                         'log_likelihood': model.log_likelihood
                     })
-                    
+
                     if ic_value < best_ic:
                         best_ic = ic_value
                         best_order = (p, q)
-                        
+
+                    # Memory cleanup: delete model after extracting metrics
+                    del model
+                    gc.collect()
+
                 except:
                     continue
-                    
+
         return best_order
     
     @staticmethod

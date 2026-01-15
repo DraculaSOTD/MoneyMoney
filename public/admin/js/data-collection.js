@@ -221,7 +221,7 @@ function handleCollectionProgress(data) {
         jobId: data.job_id,
         status: data.status,
         progress: data.progress,
-        currentStage: data.current_stage || data.status,
+        currentStage: data.stage || data.current_stage || data.status,
         totalRecords: data.total_records || 0
     };
 
@@ -231,12 +231,14 @@ function handleCollectionProgress(data) {
 function handleCollectionCompleted(data) {
     console.log('Collection completed:', data);
 
+    const totalRecords = data.total_data_points || data.total_records || 0;
+
     state.collectionProgress = {
         jobId: data.job_id,
         status: 'completed',
         progress: 100,
         currentStage: 'completed',
-        totalRecords: data.total_records
+        totalRecords: totalRecords
     };
 
     state.isCollecting = false;
@@ -244,7 +246,7 @@ function handleCollectionCompleted(data) {
 
     // Move to completion step
     setTimeout(() => {
-        document.getElementById('totalRecords').textContent = data.total_records.toLocaleString();
+        document.getElementById('totalRecords').textContent = totalRecords.toLocaleString();
         document.getElementById('completedSymbol').textContent = state.selectedProfile?.symbol || '';
         setActiveStep(3);
         showNotification('Data collection completed successfully!', 'success');

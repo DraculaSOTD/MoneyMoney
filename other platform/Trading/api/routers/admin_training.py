@@ -1,20 +1,39 @@
 # ==================== Model Training Task Functions ====================
 # This file contains the ML model training functions that will be imported into admin.py
 
+# Maximum number of samples to use for training to prevent memory issues
+# 10k 1-minute candles = ~7 days of data, sufficient for model training
+# Reduced from 30k to prevent memory exhaustion during GRU training
+MAX_TRAINING_SAMPLES = 10000
+
+# GARCH training configuration for memory optimization
+# Set options to reduce memory usage during training
+GARCH_TRAINING_CONFIG = {
+    'skip_order_selection': True,      # Skip grid search, use fixed order (saves ~4 models)
+    'fixed_order': (1, 1),             # Default GARCH(1,1) - most common in practice
+    'simplified_ensemble': True,       # Use simplified ensemble (fewer models)
+    'ensemble_models': ['garch'],      # Models to use when simplified (skip EGARCH/GJR)
+    'enable_gc': True,                 # Enable explicit garbage collection between fits
+}
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
 from typing import Dict
 import asyncio
+import gc
 
-from database.models import SessionLocal, ModelTrainingJob, MarketData, JobStatus
+from database.models import SessionLocal, ModelTrainingJob, MarketData, JobStatus, ProfileModel, ModelTrainingHistory, ModelStatus
+import uuid
 from services.websocket_manager import connection_manager
 from crypto_ml_trading.features import EnhancedTechnicalIndicators, FeaturePipeline
 from crypto_ml_trading.models import AutoARIMA
 from sklearn.model_selection import train_test_split
 from crypto_ml_trading.models.statistical.arima.arima_model import ARIMA, AutoARIMA
-from crypto_ml_trading.models.statistical.garch.garch_model import GARCH
+from crypto_ml_trading.models.statistical.garch.garch_model import GARCH, EGARCH, GJRGARCH
+from crypto_ml_trading.models.statistical.garch.utils import GARCHUtils
+from crypto_ml_trading.models.statistical.garch.volatility_forecaster import VolatilityForecaster, RealizedVolatilityCalculator
 from crypto_ml_trading.models.deep_learning.gru_attention.model import GRUAttentionModel
 from crypto_ml_trading.models.deep_learning.gru_attention.enhanced_trainer import EnhancedGRUAttentionTrainer
 from crypto_ml_trading.models.deep_learning.cnn_pattern.cnn_model import CNNPatternRecognizer
@@ -174,11 +193,12 @@ async def train_model_task(
         except Exception as ws_error:
             logger.error(f"[{job_id}] WebSocket broadcast failed (non-critical): {ws_error}", exc_info=True)
 
-        # Load market data from database
+        # Load market data from database (limit to MAX_TRAINING_SAMPLES to avoid memory issues)
         logger.info(f"[{job_id}] Loading market data for profile {profile_id}...")
         market_data = db.query(MarketData).filter(
             MarketData.profile_id == profile_id
-        ).order_by(MarketData.timestamp).all()
+        ).order_by(MarketData.timestamp.desc()).limit(MAX_TRAINING_SAMPLES).all()
+        market_data = market_data[::-1]  # Reverse to chronological order
 
         if not market_data or len(market_data) < 100:
             raise ValueError(f"Insufficient data: only {len(market_data)} records")
@@ -195,6 +215,12 @@ async def train_model_task(
         } for d in market_data])
 
         df.set_index('timestamp', inplace=True)
+
+        # Sample data to prevent memory issues with large datasets
+        if len(df) > MAX_TRAINING_SAMPLES:
+            original_len = len(df)
+            df = df.tail(MAX_TRAINING_SAMPLES).copy()
+            logger.info(f"[{job_id}] Sampled last {MAX_TRAINING_SAMPLES} records from {original_len} total (using most recent data)")
 
         logger.info(f"[{job_id}] Loaded {len(df)} data points, updating progress to 5%")
         job.progress = 5
@@ -340,8 +366,49 @@ async def train_model_task(
         logger.info(f"[{job_id}] Updating job status to COMPLETED...")
         job.status = JobStatus.COMPLETED
         job.progress = 100
-        job.accuracy = results.get('accuracy', 0.0)
+        job.accuracy = float(results.get('accuracy', 0.0))
         job.completed_at = datetime.utcnow()
+        db.commit()
+
+        # Create or update ProfileModel record
+        profile_model = db.query(ProfileModel).filter(
+            ProfileModel.profile_id == profile_id,
+            ProfileModel.model_name == model_name
+        ).first()
+
+        if not profile_model:
+            profile_model = ProfileModel(
+                profile_id=profile_id,
+                model_name=model_name,
+                model_type=model_name,
+                status=ModelStatus.TRAINED,
+                validation_accuracy=float(results.get('accuracy', 0.0)),
+                test_accuracy=float(results.get('accuracy', 0.0)),
+                last_trained=datetime.utcnow()
+            )
+            db.add(profile_model)
+        else:
+            profile_model.status = ModelStatus.TRAINED
+            profile_model.validation_accuracy = float(results.get('accuracy', 0.0))
+            profile_model.test_accuracy = float(results.get('accuracy', 0.0))
+            profile_model.last_trained = datetime.utcnow()
+
+        db.commit()
+        db.refresh(profile_model)
+
+        # Create ModelTrainingHistory record
+        training_history = ModelTrainingHistory(
+            profile_id=profile_id,
+            model_id=profile_model.id,
+            run_id=str(uuid.uuid4()),
+            started_at=job.started_at,
+            completed_at=datetime.utcnow(),
+            duration=(datetime.utcnow() - job.started_at).total_seconds() if job.started_at else 0,
+            status='completed',
+            val_accuracy=float(results.get('accuracy', 0.0)),
+            test_accuracy=float(results.get('accuracy', 0.0))
+        )
+        db.add(training_history)
         db.commit()
 
         logger.info(f"[{job_id}] Training completed for {model_name} on {symbol} with accuracy {results.get('accuracy', 0.0)}")
@@ -350,7 +417,7 @@ async def train_model_task(
         try:
             logger.info(f"[{job_id}] Broadcasting training completion...")
             await connection_manager.broadcast_model_training_completed(
-                job_id, symbol, model_name, results.get('accuracy', 0.0)
+                job_id, symbol, model_name, float(results.get('accuracy', 0.0))
             )
             logger.info(f"[{job_id}] WebSocket broadcast successful (completion)")
         except Exception as ws_error:
@@ -398,9 +465,19 @@ async def train_arima_model(df: pd.DataFrame, job_id: str, symbol: str, job, db)
         # Use closing prices for ARIMA
         prices = df['close'].values
 
-        # Find best ARIMA order and fit model
-        auto_arima = AutoARIMA(max_p=5, max_d=2, max_q=5)
-        model = auto_arima.fit(prices)
+        # Proper time series train/test split (80% train, 20% test)
+        # CRITICAL: Never train on test data to avoid data leakage
+        split_idx = int(len(prices) * 0.8)
+        train_prices = prices[:split_idx]
+        test_prices = prices[split_idx:]
+
+        logger.info(f"Train/test split: {len(train_prices)} train, {len(test_prices)} test samples")
+
+        # Find best ARIMA order and fit model on TRAINING DATA ONLY
+        # Reduced grid search (18 combinations instead of 108) for faster training
+        auto_arima = AutoARIMA(max_p=2, max_d=1, max_q=2)
+        # Run blocking fit in thread pool to prevent event loop blocking
+        model = await asyncio.to_thread(auto_arima.fit, train_prices)
 
         logger.info(f"Best ARIMA order: {auto_arima.best_params}")
         job.progress = 60
@@ -412,25 +489,42 @@ async def train_arima_model(df: pd.DataFrame, job_id: str, symbol: str, job, db)
         )
 
         # Model is already fitted from auto_arima.fit()
-        logger.info("ARIMA model fitted")
+        logger.info("ARIMA model fitted on training data")
         job.progress = 80
         db.commit()
 
         # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "ARIMA", 80, "Model fitted, evaluating performance..."
+            job_id, symbol, "ARIMA", 80, "Model fitted, evaluating on held-out test data..."
         )
 
-        # Make predictions for evaluation
-        forecast_steps = min(50, len(prices) // 10)
+        # Make predictions on held-out TEST data (data model has never seen)
+        forecast_steps = min(len(test_prices), 50)
         predictions = model.predict(steps=forecast_steps)
 
-        # Calculate accuracy (using last N points)
-        actual = prices[-forecast_steps:]
-        mape = np.mean(np.abs((actual - predictions) / actual)) * 100
-        accuracy = max(0, 100 - mape)
+        # Evaluate on TEST data only - this gives honest out-of-sample performance
+        actual = test_prices[:forecast_steps]
 
-        logger.info(f"ARIMA accuracy: {accuracy:.2f}%")
+        # Calculate MAPE (Mean Absolute Percentage Error)
+        mape = np.mean(np.abs((actual - predictions) / actual)) * 100
+
+        # Calculate directional accuracy (more meaningful for trading)
+        # Compare if predicted direction matches actual direction
+        actual_returns = np.diff(actual)
+        pred_returns = np.diff(predictions)
+        if len(actual_returns) > 0:
+            direction_correct = np.sum(np.sign(actual_returns) == np.sign(pred_returns))
+            directional_accuracy = (direction_correct / len(actual_returns)) * 100
+        else:
+            directional_accuracy = 50.0  # Default to random chance
+
+        # Use directional accuracy as the primary metric (more honest for trading)
+        accuracy = directional_accuracy
+
+        logger.info(f"ARIMA out-of-sample evaluation: MAPE={mape:.2f}%, Directional Accuracy={directional_accuracy:.2f}%")
+
+        # Now retrain on full dataset for deployment (but metrics are from test set)
+        model = await asyncio.to_thread(auto_arima.fit, prices)
 
         # Save model
         model_path = Path("models") / symbol / "ARIMA" / "model.npz"
@@ -441,7 +535,10 @@ async def train_arima_model(df: pd.DataFrame, job_id: str, symbol: str, job, db)
             'model': model,
             'accuracy': accuracy,
             'order': auto_arima.best_params,
-            'mape': mape
+            'mape': mape,
+            'directional_accuracy': directional_accuracy,
+            'train_samples': len(train_prices),
+            'test_samples': len(test_prices)
         }
 
     except Exception as e:
@@ -450,55 +547,208 @@ async def train_arima_model(df: pd.DataFrame, job_id: str, symbol: str, job, db)
 
 
 async def train_garch_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
-    """Train GARCH model for volatility forecasting."""
+    """
+    Train GARCH model for volatility forecasting with advanced features.
+
+    Improvements:
+    - Auto order selection (p,q) using BIC
+    - Ensemble with EGARCH for asymmetric volatility
+    - Realized volatility (Garman-Klass) for better evaluation
+    - Model diagnostics tracking
+    """
     try:
-        logger.info("Training GARCH model")
+        logger.info("Training GARCH model with advanced features")
 
         # Calculate returns
         returns = df['close'].pct_change().dropna().values
 
+        # Proper time series train/test split (80% train, 20% test)
+        split_idx = int(len(returns) * 0.8)
+        train_returns = returns[:split_idx]
+        test_returns = returns[split_idx:]
+
+        logger.info(f"Train/test split: {len(train_returns)} train, {len(test_returns)} test samples")
+
+        job.progress = 50
+        db.commit()
+
+        # Broadcast progress
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "GARCH", 50, "Returns calculated, selecting optimal order..."
+        )
+
+        # Phase 1.1: Order selection (conditional based on config to save memory)
+        if not GARCH_TRAINING_CONFIG.get('skip_order_selection', False):
+            logger.info("Selecting optimal GARCH order using BIC...")
+            try:
+                best_order = await asyncio.to_thread(
+                    GARCHUtils.select_garch_order, train_returns, 2, 2, 'bic'
+                )
+                best_p, best_q = best_order
+                logger.info(f"Selected optimal order: GARCH({best_p},{best_q})")
+            except Exception as e:
+                logger.warning(f"Order selection failed, using default (1,1): {e}")
+                best_p, best_q = 1, 1
+        else:
+            # Use fixed order to save memory (skips fitting 4 models during grid search)
+            best_p, best_q = GARCH_TRAINING_CONFIG.get('fixed_order', (1, 1))
+            logger.info(f"Using fixed order: GARCH({best_p},{best_q}) (order selection skipped to save memory)")
+
+        # Garbage collection after order selection
+        if GARCH_TRAINING_CONFIG.get('enable_gc', True):
+            gc.collect()
+            logger.info("Garbage collection completed after order selection")
+
         job.progress = 60
         db.commit()
 
-        # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "GARCH", 60, "Returns calculated, fitting model..."
+            job_id, symbol, "GARCH", 60, f"Using GARCH({best_p},{best_q}), fitting ensemble models..."
         )
 
-        # Fit GARCH model
-        model = GARCH(p=1, q=1)
-        model.fit(returns)
+        # Phase 1.2 & 1.3: Train ensemble models (conditional based on config to save memory)
+        if GARCH_TRAINING_CONFIG.get('simplified_ensemble', False):
+            ensemble_models = GARCH_TRAINING_CONFIG.get('ensemble_models', ['garch'])
+            logger.info(f"Training simplified ensemble with {ensemble_models} (saves memory)...")
+        else:
+            ensemble_models = ['garch', 'egarch', 'gjr']
+            logger.info("Training full ensemble models (GARCH + EGARCH + GJR-GARCH)...")
 
-        logger.info("GARCH model fitted")
-        job.progress = 80
+        forecaster = VolatilityForecaster(models=ensemble_models)
+        await asyncio.to_thread(forecaster.fit_models, train_returns, False)
+
+        # Reuse GARCH from ensemble if available, otherwise create new one
+        if 'garch' in forecaster.models:
+            garch_model = forecaster.models['garch']
+            logger.info("Reusing GARCH model from ensemble")
+        else:
+            garch_model = GARCH(p=best_p, q=best_q)
+            await asyncio.to_thread(garch_model.fit, train_returns)
+
+        # Garbage collection after ensemble fitting
+        if GARCH_TRAINING_CONFIG.get('enable_gc', True):
+            gc.collect()
+            logger.info("Garbage collection completed after ensemble fitting")
+
+        logger.info("Ensemble models fitted on training data")
+        job.progress = 75
         db.commit()
 
-        # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "GARCH", 80, "Model fitted, forecasting volatility..."
+            job_id, symbol, "GARCH", 75, "Models fitted, evaluating on held-out test data..."
         )
 
-        # Forecast volatility
-        volatility_forecast = model.forecast(horizon=10)
+        # Phase 1.4: Evaluate using realized volatility (Garman-Klass)
+        forecast_steps = min(len(test_returns), 50)
 
-        # Simple accuracy metric (R-squared for volatility)
-        accuracy = 75.0  # Placeholder, actual calculation would compare forecast to actual
+        # Get ensemble forecast
+        ensemble_forecast = forecaster.forecast_ensemble(steps=forecast_steps)
+        volatility_forecast = ensemble_forecast['volatility']
 
-        logger.info(f"GARCH accuracy: {accuracy:.2f}%")
+        # Calculate realized volatility using Garman-Klass (better than squared returns)
+        # Need OHLC data from the test period
+        test_high = df['high'].values[split_idx:split_idx + forecast_steps]
+        test_low = df['low'].values[split_idx:split_idx + forecast_steps]
+        test_open = df['open'].values[split_idx:split_idx + forecast_steps]
+        test_close = df['close'].values[split_idx:split_idx + forecast_steps]
 
-        # Save model
+        # Calculate per-period realized volatility
+        if len(test_high) >= forecast_steps:
+            # Use Garman-Klass for realized volatility estimation
+            log_hl = np.log(test_high / test_low)
+            log_co = np.log(test_close / test_open)
+            realized_variance = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
+            realized_vol = np.sqrt(np.abs(realized_variance))
+        else:
+            # Fallback to squared returns if OHLC data insufficient
+            realized_vol = np.abs(test_returns[:forecast_steps])
+
+        # Calculate accuracy using correlation
+        if len(volatility_forecast) > 1 and len(realized_vol) > 1:
+            correlation = np.corrcoef(volatility_forecast[:len(realized_vol)], realized_vol)[0, 1]
+            if np.isnan(correlation):
+                correlation = 0.0
+            accuracy = (correlation + 1) * 50
+        else:
+            accuracy = 50.0
+
+        logger.info(f"GARCH ensemble out-of-sample evaluation: Accuracy={accuracy:.2f}%")
+
+        job.progress = 85
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "GARCH", 85, "Evaluation complete, retraining on full data..."
+        )
+
+        # Phase 1.5: Compute diagnostics
+        diagnostics = {}
+        if garch_model.alpha is not None and garch_model.beta is not None:
+            persistence = float(np.sum(garch_model.alpha) + np.sum(garch_model.beta))
+            diagnostics = {
+                'selected_order': f"GARCH({best_p},{best_q})",
+                'persistence': persistence,
+                'half_life': np.log(0.5) / np.log(persistence) if persistence < 1 and persistence > 0 else float('inf'),
+                'aic': float(garch_model.aic) if garch_model.aic else None,
+                'bic': float(garch_model.bic) if garch_model.bic else None,
+                'omega': float(garch_model.omega) if garch_model.omega else None,
+                'alpha': [float(a) for a in garch_model.alpha] if garch_model.alpha is not None else None,
+                'beta': [float(b) for b in garch_model.beta] if garch_model.beta is not None else None,
+                'ensemble_models': list(forecaster.models.keys()),
+                'ensemble_weights': ensemble_forecast.get('weights', {})
+            }
+            logger.info(f"GARCH diagnostics: persistence={persistence:.4f}, AIC={garch_model.aic:.2f}")
+
+        # Retrain on full dataset for deployment
+        final_model = GARCH(p=best_p, q=best_q)
+        await asyncio.to_thread(final_model.fit, returns)
+
+        # Also retrain ensemble on full data (use same config as earlier)
+        if GARCH_TRAINING_CONFIG.get('simplified_ensemble', False):
+            final_ensemble_models = GARCH_TRAINING_CONFIG.get('ensemble_models', ['garch'])
+        else:
+            final_ensemble_models = ['garch', 'egarch', 'gjr']
+
+        final_forecaster = VolatilityForecaster(models=final_ensemble_models)
+        await asyncio.to_thread(final_forecaster.fit_models, returns, False)
+
+        # Garbage collection after final training
+        if GARCH_TRAINING_CONFIG.get('enable_gc', True):
+            gc.collect()
+            logger.info("Garbage collection completed after final training")
+
+        # Forecast volatility for future using ensemble
+        final_ensemble_forecast = final_forecaster.forecast_ensemble(steps=10)
+        volatility_forecast = final_ensemble_forecast['volatility']
+
+        # Save main model
         model_path = Path("models") / symbol / "GARCH" / "model.npz"
         model_path.parent.mkdir(parents=True, exist_ok=True)
-        model.save(str(model_path))
+        final_model.save(str(model_path))
+
+        # Save EGARCH model if available
+        if 'egarch' in final_forecaster.models:
+            egarch_path = Path("models") / symbol / "EGARCH" / "model.npz"
+            egarch_path.parent.mkdir(parents=True, exist_ok=True)
+            final_forecaster.models['egarch'].save(str(egarch_path))
+            logger.info(f"EGARCH model saved to {egarch_path}")
+
+        logger.info(f"GARCH model saved to {model_path}")
 
         return {
-            'model': model,
+            'model': final_model,
             'accuracy': accuracy,
-            'volatility_forecast': volatility_forecast.tolist()
+            'volatility_forecast': volatility_forecast.tolist(),
+            'train_samples': len(train_returns),
+            'test_samples': len(test_returns),
+            'diagnostics': diagnostics,
+            'ensemble_models': list(final_forecaster.models.keys())
         }
 
     except Exception as e:
         logger.error(f"GARCH training failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise
 
 
@@ -507,47 +757,43 @@ async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
     try:
         logger.info("Training GRU-Attention model")
 
-        # Create sequences
-        X, y = create_sequences(df, sequence_length=100)
+        # Get feature count from DataFrame (exclude non-feature columns)
+        feature_cols = [c for c in df.columns if c not in ['timestamp', 'action', 'label', 'target']]
+        input_size = len(feature_cols)
+        logger.info(f"Input features: {input_size} columns, {len(df)} samples")
 
-        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
         job.progress = 55
         db.commit()
 
         # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "GRU_Attention", 55, "Sequences created, splitting data..."
+            job_id, symbol, "GRU_Attention", 55, "Initializing model..."
         )
-
-        # Split data
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        logger.info(f"Split data: train={len(X_train)}, val={len(X_val)}")
 
         # Initialize model
         model = GRUAttentionModel(
-            input_size=X.shape[2],
-            hidden_size=256,
-            num_layers=3,
-            num_classes=3,
-            attention_heads=8
+            input_size=input_size,
+            hidden_sizes=[256, 128, 64],
+            num_attention_heads=4,
+            num_classes=3
         )
 
-        # Train with progress callbacks
+        # Initialize trainer - it handles sequence creation and train/val split internally
         trainer = EnhancedGRUAttentionTrainer(
             model=model,
             optimizer='adamw',
             learning_rate=0.001,
-            batch_size=64,
-            sequence_length=100
+            batch_size=32,
+            sequence_length=50,
+            validation_split=0.2,
+            early_stopping_patience=5
         )
 
-        # Train for limited epochs
-        train_results = trainer.train(
-            X_train, y_train,
-            X_val, y_val,
-            epochs=20,
-            early_stopping_patience=5
+        # Train - pass DataFrame, trainer handles sequences and splitting
+        train_results = await asyncio.to_thread(
+            trainer.train,
+            df,   # DataFrame with features + 'action' column
+            10    # epochs
         )
 
         logger.info("GRU model trained")
@@ -567,6 +813,13 @@ async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
         model_path = Path("models") / symbol / "GRU_Attention"
         model_path.parent.mkdir(parents=True, exist_ok=True)
         model.save(str(model_path / "model.npz"))
+
+        # Final GPU cleanup after training
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except:
+            pass
 
         return {
             'model': model,
@@ -628,11 +881,13 @@ async def train_cnn_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
             batch_size=32
         )
 
-        train_results = trainer.train(
+        # Run training in thread pool to prevent event loop blocking
+        train_results = await asyncio.to_thread(
+            trainer.train,
             X_train, y_train,
             X_val, y_val,
-            epochs=20,
-            early_stopping_patience=5
+            20,  # epochs
+            5    # early_stopping_patience
         )
 
         logger.info("CNN model trained")
@@ -652,6 +907,13 @@ async def train_cnn_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
         model_path = Path("models") / symbol / "CNN_Pattern"
         model_path.parent.mkdir(parents=True, exist_ok=True)
         model.save(str(model_path / "model.npz"))
+
+        # Final GPU cleanup after training
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except:
+            pass
 
         return {
             'model': model,
@@ -719,6 +981,66 @@ if TORCH_AVAILABLE:
             return model
 
 
+def _train_lstm_sync(model, train_loader, X_val_t, y_val_t, y_val, device, epochs=30, patience=5):
+    """
+    Synchronous LSTM training function to run in thread pool.
+    Returns (best_val_acc, epochs_trained, best_state).
+    """
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+
+    best_val_acc = 0
+    patience_counter = 0
+    best_state = None
+    epochs_trained = 0
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0
+
+        for batch_X, batch_y in train_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(X_val_t.to(device))
+            val_loss = criterion(val_outputs, y_val_t.to(device)).item()
+            val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
+            val_acc = np.mean(val_preds == y_val)
+
+        scheduler.step(val_loss)
+
+        # Early stopping
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            best_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+
+        epochs_trained = epoch + 1
+
+        if patience_counter >= patience:
+            logger.info(f"Early stopping at epoch {epoch + 1}")
+            break
+
+        # Clear GPU cache periodically to prevent memory buildup
+        if device.type == 'cuda' and (epoch + 1) % 5 == 0:
+            torch.cuda.empty_cache()
+
+    return best_val_acc, epochs_trained, best_state
+
+
 async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
     """Train LSTM model for trading signal classification."""
     try:
@@ -753,17 +1075,13 @@ async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) 
 
         # Initialize model
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"LSTM training on device: {device}")
         model = LSTMModel(
             input_size=X.shape[2],
             hidden_size=128,
             num_layers=2,
             num_classes=3
         ).to(device)
-
-        # Training setup
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
 
         job.progress = 60
         db.commit()
@@ -772,56 +1090,19 @@ async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) 
             job_id, symbol, "LSTM", 60, "Training LSTM model..."
         )
 
-        # Training loop
-        best_val_acc = 0
-        epochs = 30
-        patience = 5
-        patience_counter = 0
-
-        for epoch in range(epochs):
-            model.train()
-            train_loss = 0
-
-            for batch_X, batch_y in train_loader:
-                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
-
-                optimizer.zero_grad()
-                outputs = model(batch_X)
-                loss = criterion(outputs, batch_y)
-                loss.backward()
-                optimizer.step()
-
-                train_loss += loss.item()
-
-            # Validation
-            model.eval()
-            with torch.no_grad():
-                val_outputs = model(X_val_t.to(device))
-                val_loss = criterion(val_outputs, y_val_t.to(device)).item()
-                val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
-                val_acc = np.mean(val_preds == y_val)
-
-            scheduler.step(val_loss)
-
-            # Early stopping
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                patience_counter = 0
-                best_state = model.state_dict().copy()
-            else:
-                patience_counter += 1
-
-            if patience_counter >= patience:
-                logger.info(f"Early stopping at epoch {epoch + 1}")
-                break
-
-            # Update progress
-            progress = 60 + int((epoch / epochs) * 25)
-            job.progress = progress
-            db.commit()
+        # Run training in thread pool to prevent event loop blocking
+        best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+            _train_lstm_sync,
+            model, train_loader, X_val_t, y_val_t, y_val, device
+        )
 
         # Load best model
-        model.load_state_dict(best_state)
+        if best_state is not None:
+            model.load_state_dict(best_state)
+
+        # Final GPU cleanup after training
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
         job.progress = 85
         db.commit()
@@ -841,7 +1122,7 @@ async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) 
         return {
             'model': model,
             'accuracy': accuracy,
-            'epochs_trained': epoch + 1
+            'epochs_trained': epochs_trained
         }
 
     except Exception as e:
@@ -924,6 +1205,66 @@ if TORCH_AVAILABLE:
             return model
 
 
+def _train_transformer_sync(model, train_loader, X_val_t, y_val_t, y_val, device, epochs=30, patience=5):
+    """
+    Synchronous Transformer training function to run in thread pool.
+    Returns (best_val_acc, epochs_trained, best_state).
+    """
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0.01)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    best_val_acc = 0
+    patience_counter = 0
+    best_state = None
+    epochs_trained = 0
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0
+
+        for batch_X, batch_y in train_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            train_loss += loss.item()
+
+        scheduler.step()
+
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(X_val_t.to(device))
+            val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
+            val_acc = np.mean(val_preds == y_val)
+
+        # Early stopping
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            best_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+
+        epochs_trained = epoch + 1
+
+        if patience_counter >= patience:
+            logger.info(f"Early stopping at epoch {epoch + 1}")
+            break
+
+        # Clear GPU cache periodically to prevent memory buildup
+        if device.type == 'cuda' and (epoch + 1) % 5 == 0:
+            torch.cuda.empty_cache()
+
+    return best_val_acc, epochs_trained, best_state
+
+
 async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
     """Train Transformer model for trading signal classification."""
     try:
@@ -958,6 +1299,7 @@ async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, jo
 
         # Initialize model
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"Transformer training on device: {device}")
         model = TransformerClassifier(
             input_size=X.shape[2],
             d_model=128,
@@ -966,11 +1308,6 @@ async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, jo
             num_classes=3
         ).to(device)
 
-        # Training setup
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=0.01)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
-
         job.progress = 60
         db.commit()
 
@@ -978,56 +1315,19 @@ async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, jo
             job_id, symbol, "Transformer", 60, "Training Transformer model..."
         )
 
-        # Training loop
-        best_val_acc = 0
-        epochs = 30
-        patience = 5
-        patience_counter = 0
-
-        for epoch in range(epochs):
-            model.train()
-            train_loss = 0
-
-            for batch_X, batch_y in train_loader:
-                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
-
-                optimizer.zero_grad()
-                outputs = model(batch_X)
-                loss = criterion(outputs, batch_y)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-
-                train_loss += loss.item()
-
-            scheduler.step()
-
-            # Validation
-            model.eval()
-            with torch.no_grad():
-                val_outputs = model(X_val_t.to(device))
-                val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
-                val_acc = np.mean(val_preds == y_val)
-
-            # Early stopping
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                patience_counter = 0
-                best_state = model.state_dict().copy()
-            else:
-                patience_counter += 1
-
-            if patience_counter >= patience:
-                logger.info(f"Early stopping at epoch {epoch + 1}")
-                break
-
-            # Update progress
-            progress = 60 + int((epoch / epochs) * 25)
-            job.progress = progress
-            db.commit()
+        # Run training in thread pool to prevent event loop blocking
+        best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+            _train_transformer_sync,
+            model, train_loader, X_val_t, y_val_t, y_val, device
+        )
 
         # Load best model
-        model.load_state_dict(best_state)
+        if best_state is not None:
+            model.load_state_dict(best_state)
+
+        # Final GPU cleanup after training
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
         job.progress = 85
         db.commit()
@@ -1047,7 +1347,7 @@ async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, jo
         return {
             'model': model,
             'accuracy': accuracy,
-            'epochs_trained': epoch + 1
+            'epochs_trained': epochs_trained
         }
 
     except Exception as e:
@@ -1125,7 +1425,10 @@ async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
             job_id, symbol, "XGBoost", 60, "Training XGBoost classifier..."
         )
 
-        # Train XGBoost
+        # Train XGBoost with GPU support if available
+        use_gpu = torch.cuda.is_available() if TORCH_AVAILABLE else False
+        logger.info(f"XGBoost training on {'GPU' if use_gpu else 'CPU'}")
+
         model = xgb.XGBClassifier(
             n_estimators=200,
             max_depth=6,
@@ -1135,16 +1438,23 @@ async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
             objective='multi:softmax',
             num_class=3,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=4,
             early_stopping_rounds=10,
-            eval_metric='mlogloss'
+            eval_metric='mlogloss',
+            tree_method='hist' if not use_gpu else 'hist',  # XGBoost 2.0+ auto-detects GPU
+            device='cuda' if use_gpu else 'cpu'
         )
 
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_val, y_val)],
-            verbose=False
-        )
+        # Run blocking fit in thread pool to prevent event loop blocking
+        def _fit_xgboost():
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_val, y_val)],
+                verbose=False
+            )
+            return model
+
+        await asyncio.to_thread(_fit_xgboost)
 
         job.progress = 85
         db.commit()
@@ -1216,6 +1526,8 @@ async def train_random_forest_model(df: pd.DataFrame, job_id: str, symbol: str, 
         )
 
         # Train Random Forest
+        # n_jobs=4 limits CPU cores to prevent system overload when training multiple models
+        logger.info("Random Forest training on CPU (scikit-learn does not support GPU)")
         model = RandomForestClassifier(
             n_estimators=200,
             max_depth=15,
@@ -1223,10 +1535,11 @@ async def train_random_forest_model(df: pd.DataFrame, job_id: str, symbol: str, 
             min_samples_leaf=2,
             max_features='sqrt',
             random_state=42,
-            n_jobs=-1
+            n_jobs=4
         )
 
-        model.fit(X_train, y_train)
+        # Run blocking fit in thread pool to prevent event loop blocking
+        await asyncio.to_thread(model.fit, X_train, y_train)
 
         job.progress = 85
         db.commit()
@@ -1306,7 +1619,10 @@ async def train_lightgbm_model(df: pd.DataFrame, job_id: str, symbol: str, job, 
         train_data = lgb.Dataset(X_train, label=y_train)
         val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
 
-        # Train LightGBM
+        # Train LightGBM with GPU support if available
+        use_gpu = torch.cuda.is_available() if TORCH_AVAILABLE else False
+        logger.info(f"LightGBM training on {'GPU' if use_gpu else 'CPU'}")
+
         params = {
             'objective': 'multiclass',
             'num_class': 3,
@@ -1318,16 +1634,22 @@ async def train_lightgbm_model(df: pd.DataFrame, job_id: str, symbol: str, job, 
             'bagging_fraction': 0.8,
             'bagging_freq': 5,
             'verbose': -1,
-            'random_state': 42
+            'random_state': 42,
+            'num_threads': 4,
+            'device': 'gpu' if use_gpu else 'cpu'
         }
 
-        model = lgb.train(
-            params,
-            train_data,
-            num_boost_round=200,
-            valid_sets=[val_data],
-            callbacks=[lgb.early_stopping(stopping_rounds=10, verbose=False)]
-        )
+        # Run blocking train in thread pool to prevent event loop blocking
+        def _train_lightgbm():
+            return lgb.train(
+                params,
+                train_data,
+                num_boost_round=200,
+                valid_sets=[val_data],
+                callbacks=[lgb.early_stopping(stopping_rounds=10, verbose=False)]
+            )
+
+        model = await asyncio.to_thread(_train_lightgbm)
 
         job.progress = 85
         db.commit()
@@ -1398,6 +1720,7 @@ async def train_prophet_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
         )
 
         # Initialize and train Prophet
+        logger.info("Prophet training on CPU (Prophet does not support GPU)")
         model = Prophet(
             daily_seasonality=True,
             weekly_seasonality=True,
@@ -1411,7 +1734,8 @@ async def train_prophet_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
         lg.getLogger('prophet').setLevel(lg.WARNING)
         lg.getLogger('cmdstanpy').setLevel(lg.WARNING)
 
-        model.fit(train_df)
+        # Run blocking fit in thread pool to prevent event loop blocking
+        await asyncio.to_thread(model.fit, train_df)
 
         job.progress = 80
         db.commit()

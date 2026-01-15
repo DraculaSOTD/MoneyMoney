@@ -45,7 +45,7 @@ def create_default_admin():
         if admin_count == 0:
             admin = AdminUser(
                 username="admin",
-                email="admin@tradingplatform.local",
+                email="admin@trading.com",
                 password_hash=hash_password("admin123"),
                 full_name="Default Admin",
                 is_superuser=True,
@@ -54,7 +54,7 @@ def create_default_admin():
             db.add(admin)
             db.commit()
             print("      OK - Default admin created")
-            print("           Username: admin")
+            print("           Email: admin@trading.com")
             print("           Password: admin123")
             print("           (CHANGE IN PRODUCTION!)")
         else:

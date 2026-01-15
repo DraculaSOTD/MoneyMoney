@@ -300,7 +300,9 @@ class ARIMA:
             # Need the last d values from original data
             last_original = self.data[-self.d:]
             predictions = self.inverse_difference(predictions, last_original, self.d)
-        
+            # Trim to keep only the forecasted steps (inverse_difference adds d extra elements)
+            predictions = predictions[-steps:]
+
         if return_conf_int:
             # Calculate prediction intervals
             # For multi-step ahead, variance increases
@@ -404,6 +406,59 @@ class ARIMA:
         print("3. PACF of residuals")
         print("4. Q-Q plot of residuals")
         print("\nImplement with matplotlib when needed.")
+
+    def save(self, filepath: str) -> None:
+        """
+        Save model parameters to file.
+
+        Args:
+            filepath: Path to save the model (should end with .npz)
+        """
+        if self.ar_params is None:
+            raise ValueError("Model must be fitted before saving")
+
+        np.savez(filepath,
+            p=self.p, d=self.d, q=self.q,
+            ar_params=self.ar_params,
+            ma_params=self.ma_params,
+            intercept=self.intercept,
+            sigma2=self.sigma2,
+            residuals=self.residuals,
+            fitted_values=self.fitted_values,
+            data=self.data,
+            differenced_data=self.differenced_data,
+            aic=self.aic,
+            bic=self.bic,
+            log_likelihood=self.log_likelihood
+        )
+
+    @classmethod
+    def load(cls, filepath: str) -> 'ARIMA':
+        """
+        Load model from file.
+
+        Args:
+            filepath: Path to the saved model
+
+        Returns:
+            Loaded ARIMA model
+        """
+        data = np.load(filepath, allow_pickle=True)
+
+        model = cls(p=int(data['p']), d=int(data['d']), q=int(data['q']))
+        model.ar_params = data['ar_params']
+        model.ma_params = data['ma_params']
+        model.intercept = float(data['intercept'])
+        model.sigma2 = float(data['sigma2'])
+        model.residuals = data['residuals']
+        model.fitted_values = data['fitted_values']
+        model.data = data['data']
+        model.differenced_data = data['differenced_data']
+        model.aic = float(data['aic'])
+        model.bic = float(data['bic'])
+        model.log_likelihood = float(data['log_likelihood'])
+
+        return model
 
 
 class AutoARIMA:

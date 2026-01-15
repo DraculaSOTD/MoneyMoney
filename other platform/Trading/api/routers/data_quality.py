@@ -18,6 +18,129 @@ def get_db():
         db.close()
 
 
+@router.get("/all")
+async def get_all_data_quality(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Get data quality metrics for ALL profiles that have data.
+    Returns an array of quality metrics for each profile.
+    """
+    # Get ALL profiles (don't rely on has_data flag which may not be set correctly)
+    profiles = db.query(TradingProfile).all()
+
+    if not profiles:
+        return {
+            "profiles": [],
+            "total_profiles": 0,
+            "message": "No profiles found"
+        }
+
+    results = []
+
+    for profile in profiles:
+        symbol = profile.symbol
+
+        # Get basic statistics - check actual data in MarketData table
+        total_records = db.query(func.count(MarketData.id)).filter(
+            MarketData.symbol == symbol
+        ).scalar() or 0
+
+        # Skip profiles with no actual data
+        if total_records == 0:
+            continue
+
+        # Get date range
+        date_stats = db.query(
+            func.min(MarketData.timestamp).label('first'),
+            func.max(MarketData.timestamp).label('last')
+        ).filter(MarketData.symbol == symbol).first()
+
+        first_timestamp = date_stats.first
+        last_timestamp = date_stats.last
+
+        # Calculate expected candles (1-minute intervals)
+        if first_timestamp and last_timestamp:
+            time_diff = (last_timestamp - first_timestamp).total_seconds()
+            expected_candles = int(time_diff / 60) + 1
+            missing_data_points = max(0, expected_candles - total_records)
+            completeness_pct = (total_records / expected_candles * 100) if expected_candles > 0 else 0.0
+        else:
+            missing_data_points = 0
+            completeness_pct = 100.0
+
+        # Count null values
+        null_count = db.query(func.count(MarketData.id)).filter(
+            MarketData.symbol == symbol,
+            (MarketData.open_price == None) |
+            (MarketData.high_price == None) |
+            (MarketData.low_price == None) |
+            (MarketData.close_price == None) |
+            (MarketData.volume == None)
+        ).scalar() or 0
+
+        null_rate = (null_count / total_records * 100) if total_records > 0 else 0.0
+
+        # Detect outliers (simplified for bulk query)
+        outlier_count = 0
+        try:
+            close_prices = db.query(MarketData.close_price).filter(
+                MarketData.symbol == symbol,
+                MarketData.close_price != None
+            ).limit(10000).all()
+
+            if len(close_prices) > 10:
+                prices = [float(p[0]) for p in close_prices if p[0] is not None]
+                mean_price = statistics.mean(prices)
+                stdev_price = statistics.stdev(prices)
+
+                outlier_threshold_high = mean_price + (3 * stdev_price)
+                outlier_threshold_low = mean_price - (3 * stdev_price)
+
+                outlier_count = db.query(func.count(MarketData.id)).filter(
+                    MarketData.symbol == symbol,
+                    MarketData.close_price != None,
+                    (
+                        (MarketData.close_price > outlier_threshold_high) |
+                        (MarketData.close_price < outlier_threshold_low)
+                    )
+                ).scalar() or 0
+        except Exception:
+            outlier_count = 0
+
+        # Calculate quality score
+        quality_score = calculate_quality_score(
+            completeness_pct,
+            null_rate,
+            outlier_count,
+            total_records
+        )
+
+        results.append({
+            "profile_name": profile.name,
+            "symbol": symbol,
+            "total_records": total_records,
+            "completeness_pct": round(completeness_pct, 2),
+            "quality_score": quality_score,
+            "missing_data_points": missing_data_points,
+            "outlier_count": outlier_count,
+            "date_range": {
+                "first": first_timestamp.strftime("%Y-%m-%d %H:%M:%S") if first_timestamp else None,
+                "last": last_timestamp.strftime("%Y-%m-%d %H:%M:%S") if last_timestamp else None
+            }
+        })
+
+    if not results:
+        return {
+            "profiles": [],
+            "total_profiles": 0,
+            "message": "No profiles with data found"
+        }
+
+    return {
+        "profiles": results,
+        "total_profiles": len(results)
+    }
+
+
 @router.get("/{symbol}")
 async def get_data_quality(symbol: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
@@ -152,6 +275,89 @@ async def get_data_quality(symbol: str, db: Session = Depends(get_db)) -> Dict[s
             "first": first_timestamp.strftime("%Y-%m-%d %H:%M:%S") if first_timestamp else None,
             "last": last_timestamp.strftime("%Y-%m-%d %H:%M:%S") if last_timestamp else None
         }
+    }
+
+
+@router.get("/{symbol}/gaps")
+async def get_data_gaps(
+    symbol: str,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Find gaps in the market data for a symbol.
+    Returns a list of time periods where data is missing (gaps > 1 minute).
+    """
+    from sqlalchemy import text
+
+    # Check if profile exists
+    profile = db.query(TradingProfile).filter(
+        TradingProfile.symbol == symbol
+    ).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile not found for symbol {symbol}")
+
+    # Get total count
+    total_count = db.query(func.count(MarketData.id)).filter(
+        MarketData.symbol == symbol
+    ).scalar() or 0
+
+    if total_count == 0:
+        return {
+            "symbol": symbol,
+            "total_records": 0,
+            "gaps": [],
+            "total_gaps": 0,
+            "total_missing_candles": 0,
+            "message": "No data available"
+        }
+
+    # Find gaps using a self-join to detect consecutive timestamps > 1 minute apart
+    # This raw SQL is more efficient for large datasets
+    gap_query = text("""
+        WITH ordered_data AS (
+            SELECT
+                timestamp,
+                LEAD(timestamp) OVER (ORDER BY timestamp) as next_timestamp
+            FROM market_data
+            WHERE symbol = :symbol
+        )
+        SELECT
+            timestamp as gap_start,
+            next_timestamp as gap_end,
+            EXTRACT(EPOCH FROM (next_timestamp - timestamp)) / 60 as gap_minutes
+        FROM ordered_data
+        WHERE next_timestamp IS NOT NULL
+            AND EXTRACT(EPOCH FROM (next_timestamp - timestamp)) > 60
+        ORDER BY timestamp
+        LIMIT 100
+    """)
+
+    result = db.execute(gap_query, {"symbol": symbol})
+    gaps = []
+    total_missing = 0
+
+    for row in result:
+        gap_start = row[0]
+        gap_end = row[1]
+        gap_minutes = int(row[2])
+        missing_candles = gap_minutes - 1  # Subtract 1 because we have the candle before the gap
+
+        gaps.append({
+            "gap_start": gap_start.strftime("%Y-%m-%d %H:%M:%S"),
+            "gap_end": gap_end.strftime("%Y-%m-%d %H:%M:%S"),
+            "gap_minutes": gap_minutes,
+            "missing_candles": missing_candles
+        })
+        total_missing += missing_candles
+
+    return {
+        "symbol": symbol,
+        "total_records": total_count,
+        "gaps": gaps,
+        "total_gaps": len(gaps),
+        "total_missing_candles": total_missing,
+        "message": f"Found {len(gaps)} gaps with {total_missing} missing candles" if gaps else "No gaps found"
     }
 
 

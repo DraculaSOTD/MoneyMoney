@@ -34,7 +34,7 @@
             <div class="hero-badge">
                 <span>🎯 50+ Trading Instruments with AI Analysis</span>
             </div>
-            <h1>Advanced <span style="color: #E1007A;">Trading</span> Analytics Without the Brokerage</h1>
+            <h1>Advanced <span style="color: #3B82F6;">Trading</span> Analytics Without the Brokerage</h1>
             <p>Access trading instruments, technical analysis, and AI-powered insights for crypto and forex markets. Get the data and analysis you need to make informed trading decisions - no brokerage account required.</p>
             <div class="hero-actions">
                 <a href="/auth?mode=signup" class="btn btn-primary">Start Trading Analysis</a>
@@ -55,7 +55,7 @@
                 <div class="features-visual">
                     <div id="firstDemoContainer" style="width: 100%; max-width: 600px; background: var(--color-card-background); border: 1px solid var(--color-card-border); border-radius: 16px; padding: 30px; backdrop-filter: blur(10px); position: relative;">
                         <!-- Demo Badge -->
-                        <div style="position: absolute; top: 15px; right: 15px; background: rgba(225, 0, 122, 0.9); color: white; padding: 6px 16px; border-radius: 20px; font-size: 0.75rem; z-index: 10;">
+                        <div style="position: absolute; top: 15px; right: 15px; background: rgba(59, 130, 246, 0.9); color: white; padding: 6px 16px; border-radius: 20px; font-size: 0.75rem; z-index: 10;">
                             DEMO MODE
                         </div>
 
@@ -213,7 +213,7 @@
                 <div class="team-image">
                     <div class="dashboard-preview demo-dashboard full-demo" style="width: 350px; max-width: 100%; position: relative;">
                         <!-- Demo Mode Badge -->
-                        <div class="demo-badge" style="position: absolute; top: 10px; right: 10px; background: rgba(225, 0, 122, 0.9); color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.75rem; z-index: 10;">
+                        <div class="demo-badge" style="position: absolute; top: 10px; right: 10px; background: rgba(59, 130, 246, 0.9); color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.75rem; z-index: 10;">
                             DEMO MODE
                         </div>
 
@@ -344,19 +344,8 @@
     <!-- Pricing Section -->
     <section id="pricing" class="pricing">
         <div class="container">
-            <div class="grid grid-3-cols">
-                <div class="card pricing-card">
-                    <h3>Basic Analysis</h3>
-                    <div class="price">Free</div>
-                    <p>Get started with basic trading analysis tools</p>
-                    <ul>
-                        <li>5 trading instruments</li>
-                        <li>Basic technical indicators</li>
-                        <li>Daily market overview</li>
-                        <li>Limited AI insights</li>
-                    </ul>
-                </div>
-                <div class="card pricing-card featured">
+            <div style="display: flex; justify-content: center;">
+                <div class="card pricing-card featured" style="max-width: 400px;">
                     <h3>Professional Trader</h3>
                     <div class="price">$15<span style="font-size: 1rem; color: var(--color-text-secondary);">/month</span></div>
                     <p>Complete trading analysis suite for serious traders</p>
@@ -368,18 +357,6 @@
                         <li>Advanced charting tools</li>
                         <li>Multi-timeframe analysis</li>
                         <li>Risk management tools</li>
-                    </ul>
-                </div>
-                <div class="card pricing-card">
-                    <h3>Institution</h3>
-                    <div class="price">Contact</div>
-                    <p>Enterprise-grade solutions for trading firms</p>
-                    <ul>
-                        <li>Unlimited instruments</li>
-                        <li>Custom AI model training</li>
-                        <li>API access</li>
-                        <li>Dedicated support</li>
-                        <li>White-label solutions</li>
                     </ul>
                 </div>
             </div>
@@ -506,7 +483,7 @@
         }
 
         .demo-dashboard:hover {
-            box-shadow: 0 10px 30px rgba(225, 0, 122, 0.3);
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
         }
 
         .demo-header {
@@ -549,7 +526,7 @@
 
         .first-demo-tab:hover {
             color: var(--color-primary-accent);
-            background: rgba(225, 0, 122, 0.05);
+            background: rgba(59, 130, 246, 0.05);
         }
 
         .first-demo-tab.active {
@@ -678,8 +655,8 @@
                         labels: btcData2.labels,
                         datasets: [{
                             data: btcData2.data,
-                            borderColor: '#E1007A',
-                            backgroundColor: 'rgba(225, 0, 122, 0.1)',
+                            borderColor: '#3B82F6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             fill: true
                         }]
                     }
@@ -782,7 +759,7 @@
             document.querySelectorAll('.full-demo').forEach(demo => {
                 demo.addEventListener('mouseenter', function() {
                     this.style.transform = 'translateY(-2px)';
-                    this.style.boxShadow = '0 8px 25px rgba(225, 0, 122, 0.15)';
+                    this.style.boxShadow = '0 8px 25px rgba(59, 130, 246, 0.15)';
                 });
 
                 demo.addEventListener('mouseleave', function() {

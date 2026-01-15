@@ -370,6 +370,19 @@ class EnhancedGRUAttentionTrainer(BaseTrainer):
         for grad in gradients.values():
             total_norm += np.sum(grad ** 2)
         return np.sqrt(total_norm)
+
+    def reset_accumulated_gradients(self):
+        """Clear accumulated gradients to prevent memory leaks between epochs."""
+        self.accumulated_gradients = {}
+        self.accumulation_counter = 0
+
+    def train_epoch(self, train_data: Dict[str, np.ndarray]) -> Dict[str, float]:
+        """Train for one epoch with gradient accumulation reset."""
+        # Reset accumulated gradients at start of each epoch to prevent memory leaks
+        self.reset_accumulated_gradients()
+
+        # Call parent's train_epoch
+        return super().train_epoch(train_data)
     
     def _calculate_class_metrics(self, predictions: np.ndarray, 
                                 labels: np.ndarray) -> Dict[str, float]:

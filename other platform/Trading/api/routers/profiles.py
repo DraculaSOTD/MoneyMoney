@@ -125,53 +125,53 @@ class ModelResponse(BaseModel):
     id: int
     profile_id: int
     model_name: str
-    model_type: str
-    model_version: str
-    status: str
-    parameters: dict
-    features: List[str]
-    preprocessing_config: dict
-    last_trained: Optional[datetime]
-    training_duration: Optional[float]
-    training_samples: Optional[int]
-    validation_accuracy: Optional[float]
-    validation_loss: Optional[float]
-    test_accuracy: Optional[float]
-    test_sharpe: Optional[float]
-    is_primary: bool
-    is_deployed: bool
-    deployed_at: Optional[datetime]
-    created_at: datetime
-    updated_at: datetime
-    
+    model_type: Optional[str] = None
+    model_version: Optional[str] = None
+    status: Optional[str] = None
+    parameters: Optional[dict] = None
+    features: Optional[List[str]] = None
+    preprocessing_config: Optional[dict] = None
+    last_trained: Optional[datetime] = None
+    training_duration: Optional[float] = None
+    training_samples: Optional[int] = None
+    validation_accuracy: Optional[float] = None
+    validation_loss: Optional[float] = None
+    test_accuracy: Optional[float] = None
+    test_sharpe: Optional[float] = None
+    is_primary: Optional[bool] = False
+    is_deployed: Optional[bool] = False
+    deployed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
     class Config:
         orm_mode = True
 
 class TrainingHistoryResponse(BaseModel):
     id: int
     profile_id: int
-    model_id: int
-    run_id: str
-    started_at: datetime
-    completed_at: Optional[datetime]
-    duration: Optional[float]
-    status: str
-    parameters: dict
-    dataset_config: dict
-    hardware_info: dict
-    epochs_trained: int
-    final_train_loss: Optional[float]
-    final_val_loss: Optional[float]
-    best_epoch: Optional[int]
-    best_val_loss: Optional[float]
-    train_accuracy: Optional[float]
-    val_accuracy: Optional[float]
-    test_accuracy: Optional[float]
-    backtest_sharpe: Optional[float]
-    backtest_returns: Optional[float]
-    backtest_max_drawdown: Optional[float]
-    backtest_win_rate: Optional[float]
-    
+    model_id: Optional[int] = None
+    run_id: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration: Optional[float] = None
+    status: Optional[str] = None
+    parameters: Optional[dict] = None
+    dataset_config: Optional[dict] = None
+    hardware_info: Optional[dict] = None
+    epochs_trained: Optional[int] = 0
+    final_train_loss: Optional[float] = None
+    final_val_loss: Optional[float] = None
+    best_epoch: Optional[int] = None
+    best_val_loss: Optional[float] = None
+    train_accuracy: Optional[float] = None
+    val_accuracy: Optional[float] = None
+    test_accuracy: Optional[float] = None
+    backtest_sharpe: Optional[float] = None
+    backtest_returns: Optional[float] = None
+    backtest_max_drawdown: Optional[float] = None
+    backtest_win_rate: Optional[float] = None
+
     class Config:
         orm_mode = True
 

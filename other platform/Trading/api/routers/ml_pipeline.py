@@ -15,7 +15,7 @@ from exchanges.binance_connector import BinanceConnector
 from crypto_ml_trading.data.preprocessing import AdvancedPreprocessor
 from crypto_ml_trading.data.enhanced_data_loader import EnhancedDataLoader
 from crypto_ml_trading.models.unified_interface import UnifiedDeepLearningModel
-from database.repository import Repository
+from database.repository import TradingRepository as Repository
 from database.models import SessionLocal
 
 router = APIRouter()

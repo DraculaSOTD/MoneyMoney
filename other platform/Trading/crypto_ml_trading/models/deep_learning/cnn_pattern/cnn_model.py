@@ -723,3 +723,11 @@ class CNNPatternRecognizer:
         data = np.load(filepath)
         for key in data.files:
             self.params[key] = data[key]
+
+    def save(self, filepath: str):
+        """Save model parameters (alias for save_model)."""
+        self.save_model(filepath)
+
+    def load(self, filepath: str):
+        """Load model parameters (alias for load_model)."""
+        self.load_model(filepath)

@@ -29,8 +29,9 @@ class WebSocketService {
             this.socket.close();
         }
 
-        // Connect to FastAPI WebSocket endpoint with token as query parameter
-        const wsUrl = `${this.baseUrl}/ws/data-collection?token=${encodeURIComponent(token)}`;
+        // Connect to FastAPI WebSocket admin endpoint with token as query parameter
+        // Using /ws/admin instead of /ws/data-collection to support multiple channel subscriptions
+        const wsUrl = `${this.baseUrl}/ws/admin?token=${encodeURIComponent(token)}`;
 
         try {
             this.socket = new WebSocket(wsUrl);
@@ -84,9 +85,30 @@ class WebSocketService {
     }
 
     handleMessage(message) {
-        const { type, data } = message;
+        const { type, ...data } = message;
 
         switch (type) {
+            // Connection and subscription events
+            case 'welcome':
+                console.log('WebSocket welcome:', data);
+                this.emit('welcome', data);
+                break;
+
+            case 'subscribed':
+                console.log('Subscribed to channel:', data.channel);
+                this.emit('subscribed', data);
+                break;
+
+            case 'unsubscribed':
+                console.log('Unsubscribed from channel:', data.channel);
+                this.emit('unsubscribed', data);
+                break;
+
+            case 'error':
+                console.error('WebSocket error message:', data);
+                this.emit('wsError', data);
+                break;
+
             // Data collection events
             case 'data_collection_started':
                 console.log('Data collection started:', data);
@@ -211,7 +233,7 @@ class WebSocketService {
             if (this.connected) {
                 this.send({ type: 'ping' });
             }
-        }, 30000); // Ping every 30 seconds
+        }, 15000); // Ping every 15 seconds
     }
 
     stopPing() {

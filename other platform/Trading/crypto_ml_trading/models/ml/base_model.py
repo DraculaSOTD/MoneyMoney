@@ -213,12 +213,20 @@ class BaseMLModel(ABC):
         if self.model:
             from io import StringIO
             import sys
-            
+
             old_stdout = sys.stdout
             sys.stdout = buffer = StringIO()
-            
+
             self.model.summary()
-            
+
             sys.stdout = old_stdout
             return buffer.getvalue()
         return "Model not built yet"
+
+    def save(self, path: str):
+        """Save model to disk (alias for save_model)."""
+        self.save_model(path)
+
+    def load(self, path: str):
+        """Load model from disk (alias for load_model)."""
+        self.load_model(path)

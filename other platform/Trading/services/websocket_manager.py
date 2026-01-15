@@ -123,10 +123,16 @@ class ConnectionManager:
             websocket: Target WebSocket
             message: Message dictionary
         """
+        # Check if connection is still in our active set before sending
+        if websocket not in self.active_connections:
+            logger.debug("Attempted to send to disconnected WebSocket, skipping")
+            return
+
         try:
             await websocket.send_json(message)
         except Exception as e:
-            logger.error(f"Error sending personal message: {e}")
+            # Log at debug level to reduce noise during normal disconnections
+            logger.debug(f"Error sending message (connection may have closed): {e}")
             self.disconnect(websocket)
 
     async def broadcast(self, message: dict, subscribers: Optional[Set[WebSocket]] = None):
@@ -137,7 +143,8 @@ class ConnectionManager:
             message: Message dictionary
             subscribers: Specific set of subscribers (None = all active connections)
         """
-        targets = subscribers if subscribers is not None else self.active_connections
+        # Create a copy to avoid modification during iteration
+        targets = set(subscribers) if subscribers is not None else self.active_connections.copy()
 
         # Store in recent messages for reconnecting clients
         msg_category = self._get_message_category(message.get('type'))
@@ -150,10 +157,14 @@ class ConnectionManager:
         # Broadcast to all targets
         disconnected = set()
         for connection in targets:
+            # Skip if already disconnected
+            if connection not in self.active_connections:
+                continue
             try:
                 await connection.send_json(message)
             except Exception as e:
-                logger.error(f"Error broadcasting to connection: {e}")
+                # Log at debug level to reduce noise during normal disconnections
+                logger.debug(f"Error broadcasting (connection may have closed): {e}")
                 disconnected.add(connection)
 
         # Clean up disconnected clients
