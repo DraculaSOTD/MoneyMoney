@@ -1,0 +1,13 @@
+{
+  "symbol": "BTCUSDT",
+  "n_sentiment_features": 7,
+  "fear_greed_weight": 0.6,
+  "reddit_weight": 0.4,
+  "trained_at": "2026-01-16T12:31:21.669603",
+  "last_sentiment": {
+    "fear_greed": 49,
+    "reddit_score": 0.0,
+    "combined_score": -0.012,
+    "signal": "neutral"
+  }
+}

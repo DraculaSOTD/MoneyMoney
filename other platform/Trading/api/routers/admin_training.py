@@ -34,19 +34,29 @@ from crypto_ml_trading.models.statistical.arima.arima_model import ARIMA, AutoAR
 from crypto_ml_trading.models.statistical.garch.garch_model import GARCH, EGARCH, GJRGARCH
 from crypto_ml_trading.models.statistical.garch.utils import GARCHUtils
 from crypto_ml_trading.models.statistical.garch.volatility_forecaster import VolatilityForecaster, RealizedVolatilityCalculator
-from crypto_ml_trading.models.deep_learning.gru_attention.model import GRUAttentionModel
-from crypto_ml_trading.models.deep_learning.gru_attention.enhanced_trainer import EnhancedGRUAttentionTrainer
 from crypto_ml_trading.models.deep_learning.cnn_pattern.cnn_model import CNNPatternRecognizer
 from crypto_ml_trading.models.deep_learning.cnn_pattern.enhanced_trainer import EnhancedCNNPatternTrainer
-from crypto_ml_trading.models.deep_learning.cnn_pattern.pattern_generator import PatternGenerator
+from crypto_ml_trading.models.deep_learning.cnn_pattern.pattern_generator import PatternGenerator, EnhancedPatternGenerator
+
+# Import PyTorch CNN model if available
+try:
+    from crypto_ml_trading.models.deep_learning.cnn_pattern.cnn_pattern_gpu import CNNPatternGPU, create_cnn_pattern_gpu
+    from crypto_ml_trading.models.deep_learning.cnn_pattern.pytorch_trainer import CNNPatternPyTorchTrainer
+    CNN_PYTORCH_AVAILABLE = True
+except ImportError:
+    CNN_PYTORCH_AVAILABLE = False
+    CNNPatternGPU = None
+    CNNPatternPyTorchTrainer = None
 
 # New model imports for LSTM, Transformer, XGBoost, Random Forest, LightGBM, Prophet
 try:
     import torch
     import torch.nn as nn
     TORCH_AVAILABLE = True
+    from crypto_ml_trading.models.deep_learning.gru_attention_gpu import GRUAttentionGPU
 except ImportError:
     TORCH_AVAILABLE = False
+    GRUAttentionGPU = None
 
 try:
     import xgboost as xgb
@@ -74,6 +84,14 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import pickle
 import logging
+
+# Import sentiment service
+try:
+    from services.sentiment_service import get_sentiment_service, SentimentService
+    SENTIMENT_AVAILABLE = True
+except ImportError:
+    SENTIMENT_AVAILABLE = False
+    SentimentService = None
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +358,10 @@ async def train_model_task(
             logger.info(f"[{job_id}] Calling train_prophet_model...")
             results = await train_prophet_model(df, job_id, symbol, job, db)
             logger.info(f"[{job_id}] train_prophet_model completed, results: {results}")
+        elif model_name == "Sentiment":
+            logger.info(f"[{job_id}] Calling train_sentiment_model...")
+            results = await train_sentiment_model(df, job_id, symbol, job, db)
+            logger.info(f"[{job_id}] train_sentiment_model completed, results: {results}")
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
@@ -753,78 +775,99 @@ async def train_garch_model(df: pd.DataFrame, job_id: str, symbol: str, job, db)
 
 
 async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
-    """Train GRU-Attention model for trading signals."""
+    """Train GRU-Attention model (GPU) for trading signals."""
     try:
-        logger.info("Training GRU-Attention model")
+        if not TORCH_AVAILABLE:
+            raise ValueError("PyTorch is not available. Please install torch.")
 
-        # Get feature count from DataFrame (exclude non-feature columns)
-        feature_cols = [c for c in df.columns if c not in ['timestamp', 'action', 'label', 'target']]
-        input_size = len(feature_cols)
-        logger.info(f"Input features: {input_size} columns, {len(df)} samples")
+        logger.info("Training GRU-Attention model (GPU)")
 
+        # Create sequences
+        X, y = create_sequences(df, sequence_length=50)
+
+        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
         job.progress = 55
         db.commit()
 
-        # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "GRU_Attention", 55, "Initializing model..."
+            job_id, symbol, "GRU_Attention", 55, "Sequences created, preparing data..."
         )
 
-        # Initialize model
-        model = GRUAttentionModel(
-            input_size=input_size,
-            hidden_sizes=[256, 128, 64],
-            num_attention_heads=4,
-            num_classes=3
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # Convert to tensors
+        X_train_t = torch.FloatTensor(X_train)
+        y_train_t = torch.LongTensor(y_train.astype(int))
+        X_val_t = torch.FloatTensor(X_val)
+        y_val_t = torch.LongTensor(y_val.astype(int))
+
+        # Create data loaders
+        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+
+        # Initialize model on GPU
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"GRU-Attention training on device: {device}")
+
+        model = GRUAttentionGPU(
+            input_dim=X.shape[2],       # Number of features
+            hidden_dim=128,
+            n_heads=4,
+            n_layers=3,
+            output_dim=3,               # 3 classes: buy, hold, sell
+            dropout=0.2,
+            bidirectional=True,
+            use_layer_norm=True
+        ).to(device)
+
+        job.progress = 60
+        db.commit()
+
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "GRU_Attention", 60, "Training GRU-Attention model on GPU..."
         )
 
-        # Initialize trainer - it handles sequence creation and train/val split internally
-        trainer = EnhancedGRUAttentionTrainer(
-            model=model,
-            optimizer='adamw',
-            learning_rate=0.001,
-            batch_size=32,
-            sequence_length=50,
-            validation_split=0.2,
-            early_stopping_patience=5
+        # Run training in thread pool
+        best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+            _train_gru_sync,
+            model, train_loader, X_val_t, y_val_t, y_val, device
         )
 
-        # Train - pass DataFrame, trainer handles sequences and splitting
-        train_results = await asyncio.to_thread(
-            trainer.train,
-            df,   # DataFrame with features + 'action' column
-            10    # epochs
-        )
+        # Load best model
+        if best_state is not None:
+            model.load_state_dict(best_state)
 
-        logger.info("GRU model trained")
+        # GPU cleanup
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+
         job.progress = 85
         db.commit()
 
-        # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "GRU_Attention", 85, "Model trained, evaluating performance..."
+            job_id, symbol, "GRU_Attention", 85, "Model trained, evaluating..."
         )
 
-        accuracy = train_results.get('val_accuracy', 0.0) * 100
-
-        logger.info(f"GRU accuracy: {accuracy:.2f}%")
+        accuracy = best_val_acc * 100
+        logger.info(f"GRU-Attention accuracy: {accuracy:.2f}%")
 
         # Save model
         model_path = Path("models") / symbol / "GRU_Attention"
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        model.save(str(model_path / "model.npz"))
-
-        # Final GPU cleanup after training
-        try:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except:
-            pass
+        model_path.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'input_dim': X.shape[2],
+            'hidden_dim': 128,
+            'n_heads': 4,
+            'n_layers': 3,
+            'output_dim': 3
+        }, str(model_path / "model.pt"))
 
         return {
             'model': model,
             'accuracy': accuracy,
-            'train_results': train_results
+            'epochs_trained': epochs_trained
         }
 
     except Exception as e:
@@ -833,84 +876,160 @@ async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
 
 
 async def train_cnn_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
-    """Train CNN-Pattern model for pattern recognition."""
+    """Train CNN-Pattern model for pattern recognition with PyTorch GPU acceleration."""
     try:
-        logger.info("Training CNN-Pattern model")
+        # Check if PyTorch GPU version should be used
+        use_pytorch = CNN_PYTORCH_AVAILABLE and TORCH_AVAILABLE and torch.cuda.is_available()
 
-        # Generate pattern images using GAF
-        pattern_gen = PatternGenerator(image_size=64)
+        if use_pytorch:
+            logger.info("Training CNN-Pattern model (PyTorch GPU with CBAM attention)")
+        else:
+            logger.info("Training CNN-Pattern model (NumPy fallback)")
 
-        # Create patterns from price data
-        window_size = 50
-        images = []
-        labels = []
+        # Use EnhancedPatternGenerator for 12-class detection when using PyTorch
+        if use_pytorch:
+            pattern_gen = EnhancedPatternGenerator(image_size=64, methods=['gasf', 'gadf', 'rp'])
+            window_size = 50
 
-        for i in range(len(df) - window_size):
-            window_data = df.iloc[i:i+window_size]
-            image = pattern_gen.generate_gaf_image(window_data['close'].values)
-            label = df.iloc[i+window_size]['signal']
+            # Generate pattern images
+            images = pattern_gen.generate_pattern_images(df, window_size=window_size)
 
-            images.append(image)
-            labels.append(label)
+            # Detect advanced patterns (12 classes)
+            labels = pattern_gen.detect_advanced_patterns(df, window_size=window_size)
 
-        images = np.array(images)
-        labels = np.array(labels, dtype=np.int64)
+            # Align lengths (generate_pattern_images: n_samples = len(df) - window_size + 1)
+            min_len = min(len(images), len(labels))
+            images = images[:min_len]
+            labels = labels[:min_len]
 
-        logger.info(f"Generated {len(images)} pattern images")
+            unique_classes = np.unique(labels)
+            num_classes = len(unique_classes)
+            logger.info(f"Generated {len(images)} pattern images with {num_classes} unique pattern classes")
+            logger.info(f"Pattern distribution: {dict(zip(*np.unique(labels, return_counts=True)))}")
+        else:
+            # Fallback to original pattern generator
+            pattern_gen = PatternGenerator(image_size=64)
+            window_size = 50
+            images = pattern_gen.generate_pattern_images(df, window_size=window_size)
+            labels = df.iloc[window_size-1:window_size-1+len(images)]['signal'].values
+            labels = np.array(labels, dtype=np.int64)
+            num_classes = 3
+            logger.info(f"Generated {len(images)} pattern images")
+
         job.progress = 60
         db.commit()
 
-        # Broadcast progress
         await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "CNN_Pattern", 60, "Pattern images generated, training model..."
+            job_id, symbol, "CNN_Pattern", 60,
+            f"Pattern images generated ({len(images)} samples), training {'PyTorch GPU' if use_pytorch else 'NumPy'} model..."
         )
 
-        # Split data
-        X_train, X_val, y_train, y_val = train_test_split(
-            images, labels, test_size=0.2, random_state=42
-        )
+        # Split data with stratification if possible
+        try:
+            X_train, X_val, y_train, y_val = train_test_split(
+                images, labels, test_size=0.2, random_state=42, stratify=labels
+            )
+        except ValueError:
+            # If stratification fails (e.g., too few samples per class), skip it
+            X_train, X_val, y_train, y_val = train_test_split(
+                images, labels, test_size=0.2, random_state=42
+            )
 
-        # Initialize model
-        model = CNNPatternRecognizer(image_size=64, num_classes=3)
+        if use_pytorch:
+            # Initialize PyTorch model with CBAM attention
+            model = CNNPatternGPU(
+                input_channels=images.shape[1],
+                num_classes=12,  # Always use 12 classes for the model
+                image_size=64,
+                use_cbam=True,
+                dropout=0.3
+            )
 
-        # Train
-        trainer = EnhancedCNNPatternTrainer(
-            model=model,
-            optimizer='adam',
-            learning_rate=0.001,
-            batch_size=32
-        )
+            # Initialize PyTorch trainer
+            trainer = CNNPatternPyTorchTrainer(
+                model=model,
+                learning_rate=0.001,
+                batch_size=32,
+                use_mixed_precision=True,
+                use_focal_loss=True  # Better for imbalanced classes
+            )
 
-        # Run training in thread pool to prevent event loop blocking
-        train_results = await asyncio.to_thread(
-            trainer.train,
-            X_train, y_train,
-            X_val, y_val,
-            20,  # epochs
-            5    # early_stopping_patience
-        )
+            # Train with progress callback
+            async def progress_cb(progress, epoch, train_acc, val_acc):
+                scaled_progress = 60 + int(progress * 0.25)  # 60-85%
+                await connection_manager.broadcast_model_training_progress(
+                    job_id, symbol, "CNN_Pattern", scaled_progress,
+                    f"Epoch {epoch}: Train {train_acc:.1%}, Val {val_acc:.1%}"
+                )
 
-        logger.info("CNN model trained")
-        job.progress = 85
-        db.commit()
+            # Run training
+            train_results = await asyncio.to_thread(
+                trainer.train,
+                X_train, y_train,
+                X_val, y_val,
+                50,   # epochs
+                10    # early_stopping_patience
+            )
 
-        # Broadcast progress
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "CNN_Pattern", 85, "Model trained, evaluating performance..."
-        )
+            accuracy = train_results.get('val_accuracy', 0.0) * 100
 
-        accuracy = train_results.get('val_accuracy', 0.0) * 100
+            logger.info("PyTorch CNN model trained")
+            job.progress = 85
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "CNN_Pattern", 85, "Model trained, saving..."
+            )
+
+            # Save PyTorch model
+            model_path = Path("models") / symbol / "CNN_Pattern"
+            model_path.mkdir(parents=True, exist_ok=True)
+            model.save(str(model_path / "model.pt"))
+
+            # Log per-class metrics if available
+            class_metrics = train_results.get('class_metrics', {})
+            if class_metrics:
+                logger.info("Per-class metrics:")
+                for class_name, metrics in class_metrics.items():
+                    logger.info(f"  {class_name}: P={metrics['precision']:.2f}, R={metrics['recall']:.2f}, F1={metrics['f1']:.2f}")
+
+        else:
+            # Fallback to NumPy implementation
+            model = CNNPatternRecognizer(image_size=64, num_classes=3)
+            trainer = EnhancedCNNPatternTrainer(
+                model=model,
+                optimizer='adam',
+                learning_rate=0.001,
+                batch_size=32
+            )
+
+            train_results = await asyncio.to_thread(
+                trainer.train,
+                X_train, y_train,
+                X_val, y_val,
+                20,  # epochs
+                5    # early_stopping_patience
+            )
+
+            accuracy = train_results.get('val_accuracy', 0.0) * 100
+
+            logger.info("NumPy CNN model trained")
+            job.progress = 85
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "CNN_Pattern", 85, "Model trained, saving..."
+            )
+
+            model_path = Path("models") / symbol / "CNN_Pattern"
+            model_path.mkdir(parents=True, exist_ok=True)
+            model.save(str(model_path / "model.npz"))
 
         logger.info(f"CNN accuracy: {accuracy:.2f}%")
 
-        # Save model
-        model_path = Path("models") / symbol / "CNN_Pattern"
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        model.save(str(model_path / "model.npz"))
-
-        # Final GPU cleanup after training
+        # Final GPU cleanup
         try:
-            if torch.cuda.is_available():
+            if TORCH_AVAILABLE and torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except:
             pass
@@ -918,7 +1037,9 @@ async def train_cnn_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
         return {
             'model': model,
             'accuracy': accuracy,
-            'train_results': train_results
+            'train_results': train_results,
+            'pytorch': use_pytorch,
+            'num_classes': num_classes if use_pytorch else 3
         }
 
     except Exception as e:
@@ -1035,6 +1156,65 @@ def _train_lstm_sync(model, train_loader, X_val_t, y_val_t, y_val, device, epoch
             break
 
         # Clear GPU cache periodically to prevent memory buildup
+        if device.type == 'cuda' and (epoch + 1) % 5 == 0:
+            torch.cuda.empty_cache()
+
+    return best_val_acc, epochs_trained, best_state
+
+
+def _train_gru_sync(model, train_loader, X_val_t, y_val_t, y_val, device, epochs=10, patience=5):
+    """
+    Synchronous GRU training function to run in thread pool.
+    Returns (best_val_acc, epochs_trained, best_state).
+    """
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+
+    best_val_acc = 0
+    patience_counter = 0
+    best_state = None
+    epochs_trained = 0
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0
+
+        for batch_X, batch_y in train_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            train_loss += loss.item()
+
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(X_val_t.to(device))
+            val_loss = criterion(val_outputs, y_val_t.to(device)).item()
+            val_preds = torch.argmax(val_outputs, dim=1).cpu().numpy()
+            val_acc = np.mean(val_preds == y_val)
+
+        scheduler.step(val_loss)
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            best_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+
+        epochs_trained = epoch + 1
+
+        if patience_counter >= patience:
+            logger.info(f"GRU early stopping at epoch {epoch + 1}")
+            break
+
         if device.type == 'cuda' and (epoch + 1) % 5 == 0:
             torch.cuda.empty_cache()
 
@@ -1783,4 +1963,201 @@ async def train_prophet_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
 
     except Exception as e:
         logger.error(f"Prophet training failed: {e}")
+        raise
+
+
+# ==================== Sentiment Model ====================
+
+async def train_sentiment_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+    """
+    Train Sentiment analysis model combining Fear & Greed Index and Reddit sentiment.
+
+    This model uses:
+    1. Fear & Greed Index from Alternative.me API
+    2. Reddit sentiment analysis using FinBERT
+    3. XGBoost classifier to combine sentiment with price action
+
+    Args:
+        df: DataFrame with OHLCV data and technical indicators
+        job_id: Job identifier
+        symbol: Trading symbol
+        job: Training job record
+        db: Database session
+
+    Returns:
+        Dict with model, accuracy, and training info
+    """
+    try:
+        logger.info(f"Training Sentiment model for {symbol}")
+
+        if not SENTIMENT_AVAILABLE:
+            raise ImportError("Sentiment service not available. Install: pip install praw transformers")
+
+        # Initialize sentiment service
+        sentiment_service = get_sentiment_service()
+
+        # Broadcast progress
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Sentiment", 50,
+            "Fetching sentiment data from Fear & Greed Index and Reddit..."
+        )
+
+        # Get current sentiment data
+        sentiment_data = await sentiment_service.get_combined_sentiment(symbol)
+
+        logger.info(f"Sentiment data: Fear & Greed={sentiment_data['fear_greed']['current_value']}, "
+                   f"Reddit score={sentiment_data['reddit']['sentiment_score']:.3f}")
+
+        # Broadcast progress
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Sentiment", 60,
+            "Preparing features for sentiment model..."
+        )
+
+        # Prepare features: combine technical indicators with sentiment
+        # Get sentiment features
+        sentiment_features = sentiment_service.get_sentiment_features(sentiment_data)
+
+        # Prepare price-based features
+        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+        if len(X) < 100:
+            raise ValueError(f"Insufficient data for training: {len(X)} samples")
+
+        # Add sentiment features to each sample (broadcast to all samples)
+        # Note: In production, you'd want historical sentiment data
+        # For now, we use current sentiment as a static feature
+        n_samples = len(X)
+        sentiment_broadcast = np.tile(sentiment_features, (n_samples, 1))
+        X_with_sentiment = np.hstack([X, sentiment_broadcast])
+
+        logger.info(f"Features shape: {X_with_sentiment.shape} (added {len(sentiment_features)} sentiment features)")
+
+        # Split data
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_with_sentiment, y, test_size=0.2, random_state=42
+        )
+
+        # Scale features
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+
+        # Handle NaN/Inf
+        X_train_scaled = np.nan_to_num(X_train_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+        X_val_scaled = np.nan_to_num(X_val_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Broadcast progress
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Sentiment", 70,
+            "Training XGBoost classifier with sentiment features..."
+        )
+
+        # Use XGBoost for the classifier
+        if XGBOOST_AVAILABLE:
+            # Check if GPU is available
+            use_gpu = False
+            try:
+                import torch
+                use_gpu = torch.cuda.is_available()
+            except:
+                pass
+
+            params = {
+                'objective': 'multi:softmax',
+                'num_class': 3,
+                'max_depth': 6,
+                'learning_rate': 0.1,
+                'n_estimators': 100,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'random_state': 42,
+                'tree_method': 'hist',
+                'device': 'cuda' if use_gpu else 'cpu'
+            }
+
+            model = xgb.XGBClassifier(**params)
+
+            # Train
+            def _train_xgb():
+                model.fit(
+                    X_train_scaled, y_train,
+                    eval_set=[(X_val_scaled, y_val)],
+                    verbose=False
+                )
+                return model
+
+            model = await asyncio.to_thread(_train_xgb)
+
+        else:
+            # Fallback to Random Forest
+            model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+
+            def _train_rf():
+                model.fit(X_train_scaled, y_train)
+                return model
+
+            model = await asyncio.to_thread(_train_rf)
+
+        # Evaluate
+        val_preds = model.predict(X_val_scaled)
+        accuracy = np.mean(val_preds == y_val) * 100
+
+        logger.info(f"Sentiment model accuracy: {accuracy:.2f}%")
+
+        # Broadcast progress
+        await connection_manager.broadcast_model_training_progress(
+            job_id, symbol, "Sentiment", 85,
+            f"Model trained with {accuracy:.1f}% accuracy, saving..."
+        )
+
+        # Save model
+        model_path = Path("models") / symbol / "Sentiment"
+        model_path.mkdir(parents=True, exist_ok=True)
+
+        # Save XGBoost model
+        if XGBOOST_AVAILABLE:
+            model.save_model(str(model_path / "model.json"))
+        else:
+            with open(model_path / "model.pkl", 'wb') as f:
+                pickle.dump(model, f)
+
+        # Save scaler
+        with open(model_path / "scaler.pkl", 'wb') as f:
+            pickle.dump(scaler, f)
+
+        # Save sentiment config
+        import json
+        sentiment_config = {
+            'symbol': symbol,
+            'n_sentiment_features': len(sentiment_features),
+            'fear_greed_weight': 0.6,
+            'reddit_weight': 0.4,
+            'trained_at': datetime.utcnow().isoformat(),
+            'last_sentiment': {
+                'fear_greed': sentiment_data['fear_greed']['current_value'],
+                'reddit_score': sentiment_data['reddit']['sentiment_score'],
+                'combined_score': sentiment_data['combined_score'],
+                'signal': sentiment_data['signal']
+            }
+        }
+        with open(model_path / "sentiment_config.json", 'w') as f:
+            json.dump(sentiment_config, f, indent=2)
+
+        logger.info(f"Sentiment model saved to {model_path}")
+
+        return {
+            'model': model,
+            'accuracy': accuracy,
+            'sentiment_data': sentiment_data,
+            'training_samples': len(X_train)
+        }
+
+    except Exception as e:
+        logger.error(f"Sentiment training failed: {e}")
         raise

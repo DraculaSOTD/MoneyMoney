@@ -298,6 +298,20 @@
                                 <li>Trend changepoints</li>
                             </ul>
                         </div>
+
+                        <div class="catalog-card glassmorphism">
+                            <div class="catalog-icon">
+                                <i class="fas fa-smile"></i>
+                            </div>
+                            <h3>Sentiment</h3>
+                            <p class="catalog-type">NLP / Alternative Data</p>
+                            <p class="catalog-desc">Market sentiment from Fear & Greed Index and Reddit</p>
+                            <ul class="catalog-features">
+                                <li>Fear & Greed Index</li>
+                                <li>Reddit sentiment (FinBERT)</li>
+                                <li>Social signal analysis</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -356,6 +370,10 @@
                     <label class="checkbox-label">
                         <input type="checkbox" name="modelType" value="Prophet" checked>
                         <span>Prophet - Time series forecasting</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modelType" value="Sentiment" checked>
+                        <span>Sentiment - Fear & Greed + Reddit analysis</span>
                     </label>
                 </div>
 

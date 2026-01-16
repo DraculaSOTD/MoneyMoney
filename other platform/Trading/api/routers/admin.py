@@ -556,7 +556,7 @@ async def start_model_training(
         # Auto-select models if not specified
         models_to_train = request.models or [
             "ARIMA", "GARCH", "GRU_Attention", "CNN_Pattern",
-            "LSTM", "Transformer", "XGBoost", "Random_Forest", "LightGBM", "Prophet"
+            "LSTM", "Transformer", "XGBoost", "Random_Forest", "LightGBM", "Prophet", "Sentiment"
         ]
 
         job_ids = []

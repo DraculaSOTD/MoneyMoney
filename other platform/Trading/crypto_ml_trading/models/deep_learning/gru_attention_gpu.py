@@ -17,7 +17,7 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from utils.gpu_manager import GPUManager, get_gpu_manager
-from utils.logger import get_logger
+from utils.logging_system import get_logger
 
 logger = get_logger(__name__)
 

@@ -420,6 +420,13 @@ function handleTrainingProgress(data) {
 
     if (!state.isTraining) return;
 
+    // Filter out cached messages from previous training sessions
+    // This prevents stale progress from old jobs (like GARCH) showing when training a different model
+    if (state.trainingJobIds.length > 0 && data.job_id && !state.trainingJobIds.includes(data.job_id)) {
+        console.log('Ignoring cached message from previous session:', data.job_id);
+        return;
+    }
+
     // Track progress per model for aggregate calculation
     if (!state.modelProgress) {
         state.modelProgress = {};
@@ -450,6 +457,12 @@ function handleTrainingProgress(data) {
 function handleTrainingCompleted(data) {
     console.log('Training completed:', data);
 
+    // Filter out cached completion messages from previous sessions
+    if (state.trainingJobIds.length > 0 && data.job_id && !state.trainingJobIds.includes(data.job_id)) {
+        console.log('Ignoring cached completion from previous session:', data.job_id);
+        return;
+    }
+
     state.isTraining = false;
     state.trainingConfirmed = false;
     stopTrainingPolling();
@@ -472,6 +485,12 @@ function handleTrainingCompleted(data) {
 
 function handleTrainingFailed(data) {
     console.error('Training failed:', data);
+
+    // Filter out cached failure messages from previous sessions
+    if (state.trainingJobIds.length > 0 && data.job_id && !state.trainingJobIds.includes(data.job_id)) {
+        console.log('Ignoring cached failure from previous session:', data.job_id);
+        return;
+    }
 
     state.isTraining = false;
     state.trainingConfirmed = false;
