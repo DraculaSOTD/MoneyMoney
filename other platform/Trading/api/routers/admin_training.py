@@ -1,10 +1,32 @@
 # ==================== Model Training Task Functions ====================
 # This file contains the ML model training functions that will be imported into admin.py
 
-# Maximum number of samples to use for training to prevent memory issues
-# 10k 1-minute candles = ~7 days of data, sufficient for model training
-# Reduced from 30k to prevent memory exhaustion during GRU training
-MAX_TRAINING_SAMPLES = 10000
+# Model-specific data loading configuration
+# max_samples: None = use ALL data, integer = limit to that many samples
+# strategy: 'recent' = use most recent data, 'all' = use all available data
+MODEL_DATA_CONFIG = {
+    # Statistical models - use recent data (they can't handle millions anyway)
+    'ARIMA': {'max_samples': 50000, 'strategy': 'recent'},
+    'GARCH': {'max_samples': 50000, 'strategy': 'recent'},
+
+    # Deep learning - can train on large datasets via batched loading
+    'GRU_Attention': {'max_samples': 500000, 'strategy': 'recent'},  # 500K samples
+    'LSTM': {'max_samples': 500000, 'strategy': 'recent'},
+    'Transformer': {'max_samples': 500000, 'strategy': 'recent'},
+    'CNN_Pattern': {'max_samples': 200000, 'strategy': 'recent'},  # Image gen is slow
+
+    # Tree models - very efficient, can handle large datasets
+    'XGBoost': {'max_samples': 1000000, 'strategy': 'recent'},  # 1M samples
+    'Random_Forest': {'max_samples': 500000, 'strategy': 'recent'},
+    'LightGBM': {'max_samples': 1000000, 'strategy': 'recent'},  # Most efficient
+
+    # Others
+    'Prophet': {'max_samples': 100000, 'strategy': 'recent'},
+    'Sentiment': {'max_samples': 50000, 'strategy': 'recent'},
+}
+
+# Default config for unknown models
+DEFAULT_DATA_CONFIG = {'max_samples': 100000, 'strategy': 'recent'}
 
 # GARCH training configuration for memory optimization
 # Set options to reduce memory usage during training
@@ -25,10 +47,13 @@ import asyncio
 import gc
 
 from database.models import SessionLocal, ModelTrainingJob, MarketData, JobStatus, ProfileModel, ModelTrainingHistory, ModelStatus
+from sqlalchemy import func
 import uuid
 from services.websocket_manager import connection_manager
 from crypto_ml_trading.features import EnhancedTechnicalIndicators, FeaturePipeline
 from crypto_ml_trading.models import AutoARIMA
+from crypto_ml_trading.training.data_cache import PreprocessedDataCache, MODEL_CACHE_CONFIG
+from crypto_ml_trading.training.hdf5_dataset import HDF5DataModule, HDF5SequenceDataset, HDF5FlatDataset
 from sklearn.model_selection import train_test_split
 from crypto_ml_trading.models.statistical.arima.arima_model import ARIMA, AutoARIMA
 from crypto_ml_trading.models.statistical.garch.garch_model import GARCH, EGARCH, GJRGARCH
@@ -94,6 +119,78 @@ except ImportError:
     SentimentService = None
 
 logger = logging.getLogger(__name__)
+
+
+def load_market_data_for_model(db, profile_id: int, model_name: str, chunk_size: int = 100000):
+    """
+    Load market data efficiently based on model requirements.
+
+    Different models can handle different amounts of data:
+    - Statistical models (ARIMA, GARCH): Limited to ~50K samples
+    - Deep learning (GRU, LSTM, etc.): Can handle 500K+ via batched training
+    - Tree models (XGBoost, LightGBM): Very efficient, can handle 1M+
+
+    Args:
+        db: Database session
+        profile_id: Profile ID to load data for
+        model_name: Model type to get appropriate config
+        chunk_size: Size of chunks for loading (for progress logging)
+
+    Returns:
+        List of MarketData records in chronological order
+    """
+    config = MODEL_DATA_CONFIG.get(model_name, DEFAULT_DATA_CONFIG)
+    max_samples = config['max_samples']
+
+    # Get total count
+    total_count = db.query(func.count(MarketData.id)).filter(
+        MarketData.profile_id == profile_id
+    ).scalar()
+
+    logger.info(f"Total available samples in database: {total_count:,}")
+
+    if max_samples is None:
+        # Use ALL data
+        samples_to_use = total_count
+    else:
+        samples_to_use = min(max_samples, total_count)
+
+    logger.info(f"Training {model_name} on {samples_to_use:,} samples (config: max={max_samples})")
+
+    # Load data - use most recent samples
+    if samples_to_use <= chunk_size:
+        # Small enough to load in one query
+        market_data = db.query(MarketData).filter(
+            MarketData.profile_id == profile_id
+        ).order_by(MarketData.timestamp.desc()).limit(samples_to_use).all()
+        return market_data[::-1]  # Reverse to chronological order
+    else:
+        # Load in chunks for large datasets
+        all_data = []
+        loaded = 0
+
+        # Calculate offset to get the most recent samples_to_use records
+        start_offset = max(0, total_count - samples_to_use)
+
+        while loaded < samples_to_use:
+            current_offset = start_offset + loaded
+            current_limit = min(chunk_size, samples_to_use - loaded)
+
+            chunk = db.query(MarketData).filter(
+                MarketData.profile_id == profile_id
+            ).order_by(MarketData.timestamp.asc()).offset(current_offset).limit(current_limit).all()
+
+            if not chunk:
+                break
+
+            all_data.extend(chunk)
+            loaded += len(chunk)
+
+            # Progress logging for large loads
+            if samples_to_use > chunk_size:
+                logger.info(f"Loaded {loaded:,} / {samples_to_use:,} samples ({100*loaded/samples_to_use:.1f}%)")
+
+        return all_data
 
 
 def create_trading_signals(df: pd.DataFrame, lookforward: int = 5, threshold: float = 0.002) -> pd.DataFrame:
@@ -211,15 +308,70 @@ async def train_model_task(
         except Exception as ws_error:
             logger.error(f"[{job_id}] WebSocket broadcast failed (non-critical): {ws_error}", exc_info=True)
 
-        # Load market data from database (limit to MAX_TRAINING_SAMPLES to avoid memory issues)
+        # Check if this model should use preprocessed data cache
+        cache = PreprocessedDataCache()
+        cache_config = MODEL_CACHE_CONFIG.get(model_name, {'use_cache': False})
+        use_cache = cache_config.get('use_cache', False)
+
+        if use_cache:
+            logger.info(f"[{job_id}] Model {model_name} uses preprocessed cache - checking cache status...")
+
+            if not cache.is_cached(symbol):
+                logger.info(f"[{job_id}] Cache not found for {symbol}, preprocessing ALL data (one-time, may take 10-15 min)...")
+
+                try:
+                    await connection_manager.broadcast_model_training_progress(
+                        job_id, symbol, model_name, 1, "preprocessing_all_data"
+                    )
+                except Exception:
+                    pass
+
+                # Define progress callback for preprocessing
+                async def preprocess_progress(percent, message):
+                    try:
+                        # Scale to 0-35% of total progress
+                        scaled_progress = int(percent * 0.35)
+                        await connection_manager.broadcast_model_training_progress(
+                            job_id, symbol, model_name, scaled_progress, f"Caching: {message}"
+                        )
+                    except Exception:
+                        pass
+                    job.progress = int(percent * 0.35)
+                    db.commit()
+
+                # Preprocess and cache ALL data
+                cache_result = await cache.preprocess_and_save(
+                    symbol=symbol,
+                    profile_id=profile_id,
+                    db=db,
+                    chunk_size=100_000,
+                    progress_callback=preprocess_progress
+                )
+
+                logger.info(f"[{job_id}] Cache created: {cache_result['n_samples']:,} samples, {cache_result['file_size_mb']:.1f} MB")
+
+            else:
+                cache_info = cache.get_cache_info(symbol)
+                logger.info(f"[{job_id}] Using existing cache: {cache_info['n_samples']:,} samples")
+
+            # For models using cache, load from HDF5 instead of database
+            # The cache contains preprocessed features - no need for indicator computation
+            job.progress = 40
+            db.commit()
+
+            try:
+                await connection_manager.broadcast_model_training_progress(
+                    job_id, symbol, model_name, 40, f"Loaded {cache.get_cache_info(symbol)['n_samples']:,} samples from cache"
+                )
+            except Exception:
+                pass
+
+        # Load market data using model-specific configuration
         logger.info(f"[{job_id}] Loading market data for profile {profile_id}...")
-        market_data = db.query(MarketData).filter(
-            MarketData.profile_id == profile_id
-        ).order_by(MarketData.timestamp.desc()).limit(MAX_TRAINING_SAMPLES).all()
-        market_data = market_data[::-1]  # Reverse to chronological order
+        market_data = load_market_data_for_model(db, profile_id, model_name)
 
         if not market_data or len(market_data) < 100:
-            raise ValueError(f"Insufficient data: only {len(market_data)} records")
+            raise ValueError(f"Insufficient data: only {len(market_data) if market_data else 0} records")
 
         logger.info(f"[{job_id}] Converting {len(market_data)} records to DataFrame...")
         # Convert to DataFrame
@@ -233,12 +385,6 @@ async def train_model_task(
         } for d in market_data])
 
         df.set_index('timestamp', inplace=True)
-
-        # Sample data to prevent memory issues with large datasets
-        if len(df) > MAX_TRAINING_SAMPLES:
-            original_len = len(df)
-            df = df.tail(MAX_TRAINING_SAMPLES).copy()
-            logger.info(f"[{job_id}] Sampled last {MAX_TRAINING_SAMPLES} records from {original_len} total (using most recent data)")
 
         logger.info(f"[{job_id}] Loaded {len(df)} data points, updating progress to 5%")
         job.progress = 5
@@ -328,7 +474,8 @@ async def train_model_task(
             logger.info(f"[{job_id}] train_garch_model completed, results: {results}")
         elif model_name == "GRU_Attention":
             logger.info(f"[{job_id}] Calling train_gru_model...")
-            results = await train_gru_model(df, job_id, symbol, job, db)
+            # Use cached data if available for much faster training on ALL data
+            results = await train_gru_model(df, job_id, symbol, job, db, cache=cache if use_cache else None)
             logger.info(f"[{job_id}] train_gru_model completed, results: {results}")
         elif model_name == "CNN_Pattern":
             logger.info(f"[{job_id}] Calling train_cnn_model...")
@@ -336,23 +483,28 @@ async def train_model_task(
             logger.info(f"[{job_id}] train_cnn_model completed, results: {results}")
         elif model_name == "LSTM":
             logger.info(f"[{job_id}] Calling train_lstm_model...")
-            results = await train_lstm_model(df, job_id, symbol, job, db)
+            # Use cached data if available for much faster training on ALL data
+            results = await train_lstm_model(df, job_id, symbol, job, db, cache=cache if use_cache else None)
             logger.info(f"[{job_id}] train_lstm_model completed, results: {results}")
         elif model_name == "Transformer":
             logger.info(f"[{job_id}] Calling train_transformer_model...")
-            results = await train_transformer_model(df, job_id, symbol, job, db)
+            # Use cached data if available for much faster training on ALL data
+            results = await train_transformer_model(df, job_id, symbol, job, db, cache=cache if use_cache else None)
             logger.info(f"[{job_id}] train_transformer_model completed, results: {results}")
         elif model_name == "XGBoost":
             logger.info(f"[{job_id}] Calling train_xgboost_model...")
-            results = await train_xgboost_model(df, job_id, symbol, job, db)
+            # Use cached data if available for much faster training on ALL data
+            results = await train_xgboost_model(df, job_id, symbol, job, db, cache=cache if use_cache else None)
             logger.info(f"[{job_id}] train_xgboost_model completed, results: {results}")
         elif model_name == "Random_Forest":
             logger.info(f"[{job_id}] Calling train_random_forest_model...")
-            results = await train_random_forest_model(df, job_id, symbol, job, db)
+            # Use cached data if available for much faster training on ALL data
+            results = await train_random_forest_model(df, job_id, symbol, job, db, cache=cache if use_cache else None)
             logger.info(f"[{job_id}] train_random_forest_model completed, results: {results}")
         elif model_name == "LightGBM":
             logger.info(f"[{job_id}] Calling train_lightgbm_model...")
-            results = await train_lightgbm_model(df, job_id, symbol, job, db)
+            # Use cached data if available for much faster training on ALL data
+            results = await train_lightgbm_model(df, job_id, symbol, job, db, cache=cache if use_cache else None)
             logger.info(f"[{job_id}] train_lightgbm_model completed, results: {results}")
         elif model_name == "Prophet":
             logger.info(f"[{job_id}] Calling train_prophet_model...")
@@ -774,44 +926,97 @@ async def train_garch_model(df: pd.DataFrame, job_id: str, symbol: str, job, db)
         raise
 
 
-async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
-    """Train GRU-Attention model (GPU) for trading signals."""
+async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db, cache: PreprocessedDataCache = None) -> Dict:
+    """Train GRU-Attention model (GPU) for trading signals.
+
+    Args:
+        df: DataFrame with features (used if cache is None)
+        job_id: Training job ID
+        symbol: Trading symbol
+        job: Job record
+        db: Database session
+        cache: Optional PreprocessedDataCache for training on ALL cached data
+    """
     try:
         if not TORCH_AVAILABLE:
             raise ValueError("PyTorch is not available. Please install torch.")
 
         logger.info("Training GRU-Attention model (GPU)")
 
-        # Create sequences
-        X, y = create_sequences(df, sequence_length=50)
-
-        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
-        job.progress = 55
-        db.commit()
-
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "GRU_Attention", 55, "Sequences created, preparing data..."
-        )
-
-        # Split data
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Convert to tensors
-        X_train_t = torch.FloatTensor(X_train)
-        y_train_t = torch.LongTensor(y_train.astype(int))
-        X_val_t = torch.FloatTensor(X_val)
-        y_val_t = torch.LongTensor(y_val.astype(int))
-
-        # Create data loaders
-        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
-
-        # Initialize model on GPU
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"GRU-Attention training on device: {device}")
 
+        sequence_length = 50
+
+        # Check if we should use cached data
+        if cache is not None and cache.is_cached(symbol):
+            # Use HDF5DataModule for memory-efficient training on ALL data
+            cache_info = cache.get_cache_info(symbol)
+            logger.info(f"Using cached data: {cache_info['n_samples']:,} samples, {cache_info['n_features']} features")
+
+            h5_path = cache._get_cache_paths(symbol)['features']
+            data_module = HDF5DataModule(
+                h5_path=str(h5_path),
+                sequence_length=sequence_length,
+                train_ratio=0.7,
+                val_ratio=0.15,
+                batch_size=64,  # Larger batch for cached data
+                num_workers=4
+            )
+
+            # Get data loaders
+            train_loader = data_module.train_dataloader()
+            val_loader = data_module.val_dataloader()
+
+            n_features = cache_info['n_features']
+            n_samples = cache_info['n_samples']
+
+            logger.info(f"Created HDF5 data loaders: train={len(data_module.train_dataset()):,}, val={len(data_module.val_dataset()):,}")
+
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "GRU_Attention", 55, f"Loaded {n_samples:,} samples from cache, preparing model..."
+            )
+
+            # For validation, we'll sample from the validation loader
+            val_dataset = data_module.val_dataset()
+            # Get a sample to determine feature shape
+            sample_x, sample_y = val_dataset[0]
+            n_features = sample_x.shape[1]
+
+        else:
+            # Fallback to traditional DataFrame-based approach
+            # Create sequences
+            X, y = create_sequences(df, sequence_length=sequence_length)
+
+            logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "GRU_Attention", 55, "Sequences created, preparing data..."
+            )
+
+            # Split data
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+            # Convert to tensors
+            X_train_t = torch.FloatTensor(X_train)
+            y_train_t = torch.LongTensor(y_train.astype(int))
+            X_val_t = torch.FloatTensor(X_val)
+            y_val_t = torch.LongTensor(y_val.astype(int))
+
+            # Create data loaders
+            train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+            val_loader = None  # Will use X_val_t directly
+
+            n_features = X.shape[2]
+
         model = GRUAttentionGPU(
-            input_dim=X.shape[2],       # Number of features
+            input_dim=n_features,       # Number of features
             hidden_dim=128,
             n_heads=4,
             n_layers=3,
@@ -828,11 +1033,19 @@ async def train_gru_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -
             job_id, symbol, "GRU_Attention", 60, "Training GRU-Attention model on GPU..."
         )
 
-        # Run training in thread pool
-        best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
-            _train_gru_sync,
-            model, train_loader, X_val_t, y_val_t, y_val, device
-        )
+        # Run training based on data source
+        if cache is not None and cache.is_cached(symbol):
+            # Train with HDF5 data loaders (memory efficient for large datasets)
+            best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+                _train_gru_with_loaders,
+                model, train_loader, val_loader, device
+            )
+        else:
+            # Traditional training with in-memory tensors
+            best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+                _train_gru_sync,
+                model, train_loader, X_val_t, y_val_t, y_val, device
+            )
 
         # Load best model
         if best_state is not None:
@@ -1221,7 +1434,90 @@ def _train_gru_sync(model, train_loader, X_val_t, y_val_t, y_val, device, epochs
     return best_val_acc, epochs_trained, best_state
 
 
-async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+def _train_gru_with_loaders(model, train_loader, val_loader, device, epochs=20, patience=5):
+    """
+    Training function that uses DataLoaders for both train and validation.
+    Used for memory-efficient training on large HDF5 datasets.
+
+    Returns (best_val_acc, epochs_trained, best_state).
+    """
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+
+    best_val_acc = 0
+    patience_counter = 0
+    best_state = None
+    epochs_trained = 0
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0
+        train_correct = 0
+        train_total = 0
+
+        for batch_X, batch_y in train_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            train_loss += loss.item()
+            _, predicted = outputs.max(1)
+            train_total += batch_y.size(0)
+            train_correct += predicted.eq(batch_y).sum().item()
+
+        train_acc = train_correct / train_total if train_total > 0 else 0
+
+        # Validation using DataLoader
+        model.eval()
+        val_loss = 0
+        val_correct = 0
+        val_total = 0
+
+        with torch.no_grad():
+            for batch_X, batch_y in val_loader:
+                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+
+                val_loss += loss.item()
+                _, predicted = outputs.max(1)
+                val_total += batch_y.size(0)
+                val_correct += predicted.eq(batch_y).sum().item()
+
+        val_acc = val_correct / val_total if val_total > 0 else 0
+        avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else float('inf')
+
+        scheduler.step(avg_val_loss)
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            best_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+
+        epochs_trained = epoch + 1
+
+        if (epoch + 1) % 5 == 0:
+            logger.info(f"Epoch {epoch+1}: Train Acc={train_acc:.4f}, Val Acc={val_acc:.4f}")
+
+        if patience_counter >= patience:
+            logger.info(f"Early stopping at epoch {epoch + 1}")
+            break
+
+        if device.type == 'cuda' and (epoch + 1) % 5 == 0:
+            torch.cuda.empty_cache()
+
+    return best_val_acc, epochs_trained, best_state
+
+
+async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db, cache: PreprocessedDataCache = None) -> Dict:
     """Train LSTM model for trading signal classification."""
     try:
         if not TORCH_AVAILABLE:
@@ -1229,35 +1525,67 @@ async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) 
 
         logger.info("Training LSTM model")
 
-        # Create sequences
-        X, y = create_sequences(df, sequence_length=100)
-
-        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
-        job.progress = 55
-        db.commit()
-
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "LSTM", 55, "Sequences created, preparing data..."
-        )
-
-        # Split data
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Convert to tensors
-        X_train_t = torch.FloatTensor(X_train)
-        y_train_t = torch.LongTensor(y_train.astype(int))
-        X_val_t = torch.FloatTensor(X_val)
-        y_val_t = torch.LongTensor(y_val.astype(int))
-
-        # Create data loaders
-        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
-
-        # Initialize model
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"LSTM training on device: {device}")
+
+        sequence_length = 100
+
+        # Check if we should use cached data
+        if cache is not None and cache.is_cached(symbol):
+            # Use HDF5DataModule for memory-efficient training on ALL data
+            cache_info = cache.get_cache_info(symbol)
+            logger.info(f"Using cached data: {cache_info['n_samples']:,} samples, {cache_info['n_features']} features")
+
+            h5_path = cache._get_cache_paths(symbol)['features']
+            data_module = HDF5DataModule(
+                h5_path=str(h5_path),
+                sequence_length=sequence_length,
+                train_ratio=0.7,
+                val_ratio=0.15,
+                batch_size=64,
+                num_workers=4
+            )
+
+            train_loader = data_module.train_dataloader()
+            val_loader = data_module.val_dataloader()
+
+            n_features = cache_info['n_features']
+
+            logger.info(f"Created HDF5 data loaders: train={len(data_module.train_dataset()):,}, val={len(data_module.val_dataset()):,}")
+
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "LSTM", 55, f"Loaded {cache_info['n_samples']:,} samples from cache..."
+            )
+        else:
+            # Fallback to traditional DataFrame-based approach
+            X, y = create_sequences(df, sequence_length=sequence_length)
+
+            logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "LSTM", 55, "Sequences created, preparing data..."
+            )
+
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+            X_train_t = torch.FloatTensor(X_train)
+            y_train_t = torch.LongTensor(y_train.astype(int))
+            X_val_t = torch.FloatTensor(X_val)
+            y_val_t = torch.LongTensor(y_val.astype(int))
+
+            train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+            val_loader = None
+
+            n_features = X.shape[2]
+
         model = LSTMModel(
-            input_size=X.shape[2],
+            input_size=n_features,
             hidden_size=128,
             num_layers=2,
             num_classes=3
@@ -1270,11 +1598,17 @@ async def train_lstm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) 
             job_id, symbol, "LSTM", 60, "Training LSTM model..."
         )
 
-        # Run training in thread pool to prevent event loop blocking
-        best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
-            _train_lstm_sync,
-            model, train_loader, X_val_t, y_val_t, y_val, device
-        )
+        # Run training based on data source
+        if cache is not None and cache.is_cached(symbol):
+            best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+                _train_gru_with_loaders,  # Reuse the same training function
+                model, train_loader, val_loader, device, 30, 5
+            )
+        else:
+            best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+                _train_lstm_sync,
+                model, train_loader, X_val_t, y_val_t, y_val, device
+            )
 
         # Load best model
         if best_state is not None:
@@ -1445,7 +1779,7 @@ def _train_transformer_sync(model, train_loader, X_val_t, y_val_t, y_val, device
     return best_val_acc, epochs_trained, best_state
 
 
-async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, job, db, cache: PreprocessedDataCache = None) -> Dict:
     """Train Transformer model for trading signal classification."""
     try:
         if not TORCH_AVAILABLE:
@@ -1453,35 +1787,65 @@ async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, jo
 
         logger.info("Training Transformer model")
 
-        # Create sequences
-        X, y = create_sequences(df, sequence_length=100)
-
-        logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
-        job.progress = 55
-        db.commit()
-
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "Transformer", 55, "Sequences created, preparing data..."
-        )
-
-        # Split data
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Convert to tensors
-        X_train_t = torch.FloatTensor(X_train)
-        y_train_t = torch.LongTensor(y_train.astype(int))
-        X_val_t = torch.FloatTensor(X_val)
-        y_val_t = torch.LongTensor(y_val.astype(int))
-
-        # Create data loaders
-        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
-
-        # Initialize model
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f"Transformer training on device: {device}")
+
+        sequence_length = 100
+
+        # Check if we should use cached data
+        if cache is not None and cache.is_cached(symbol):
+            cache_info = cache.get_cache_info(symbol)
+            logger.info(f"Using cached data: {cache_info['n_samples']:,} samples, {cache_info['n_features']} features")
+
+            h5_path = cache._get_cache_paths(symbol)['features']
+            data_module = HDF5DataModule(
+                h5_path=str(h5_path),
+                sequence_length=sequence_length,
+                train_ratio=0.7,
+                val_ratio=0.15,
+                batch_size=32,
+                num_workers=4
+            )
+
+            train_loader = data_module.train_dataloader()
+            val_loader = data_module.val_dataloader()
+
+            n_features = cache_info['n_features']
+
+            logger.info(f"Created HDF5 data loaders: train={len(data_module.train_dataset()):,}, val={len(data_module.val_dataset()):,}")
+
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "Transformer", 55, f"Loaded {cache_info['n_samples']:,} samples from cache..."
+            )
+        else:
+            X, y = create_sequences(df, sequence_length=sequence_length)
+
+            logger.info(f"Created sequences: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "Transformer", 55, "Sequences created, preparing data..."
+            )
+
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+            X_train_t = torch.FloatTensor(X_train)
+            y_train_t = torch.LongTensor(y_train.astype(int))
+            X_val_t = torch.FloatTensor(X_val)
+            y_val_t = torch.LongTensor(y_val.astype(int))
+
+            train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+            val_loader = None
+
+            n_features = X.shape[2]
+
         model = TransformerClassifier(
-            input_size=X.shape[2],
+            input_size=n_features,
             d_model=128,
             nhead=4,
             num_layers=2,
@@ -1495,11 +1859,17 @@ async def train_transformer_model(df: pd.DataFrame, job_id: str, symbol: str, jo
             job_id, symbol, "Transformer", 60, "Training Transformer model..."
         )
 
-        # Run training in thread pool to prevent event loop blocking
-        best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
-            _train_transformer_sync,
-            model, train_loader, X_val_t, y_val_t, y_val, device
-        )
+        # Run training based on data source
+        if cache is not None and cache.is_cached(symbol):
+            best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+                _train_gru_with_loaders,
+                model, train_loader, val_loader, device, 30, 5
+            )
+        else:
+            best_val_acc, epochs_trained, best_state = await asyncio.to_thread(
+                _train_transformer_sync,
+                model, train_loader, X_val_t, y_val_t, y_val, device
+            )
 
         # Load best model
         if best_state is not None:
@@ -1567,7 +1937,7 @@ def prepare_features_for_ensemble(df: pd.DataFrame, sequence_length: int = 100) 
     return np.array(X_list), np.array(y_list)
 
 
-async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, db, cache: PreprocessedDataCache = None) -> Dict:
     """Train XGBoost model for trading signal classification."""
     try:
         if not XGBOOST_AVAILABLE:
@@ -1575,23 +1945,46 @@ async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
 
         logger.info("Training XGBoost model")
 
-        # Prepare features
-        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+        # Check if we should use cached data
+        if cache is not None and cache.is_cached(symbol):
+            cache_info = cache.get_cache_info(symbol)
+            logger.info(f"Using cached data: {cache_info['n_samples']:,} samples, {cache_info['n_features']} features")
 
-        logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
-        job.progress = 55
-        db.commit()
+            h5_path = cache._get_cache_paths(symbol)['features']
+            flat_dataset = HDF5FlatDataset(str(h5_path))
 
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "XGBoost", 55, "Features prepared, training model..."
-        )
+            # Load data (already preprocessed and scaled in cache)
+            X, y = flat_dataset.get_numpy_arrays()
 
-        # Handle NaN/Inf values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            logger.info(f"Loaded from cache: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
 
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "XGBoost", 55, f"Loaded {cache_info['n_samples']:,} samples from cache..."
+            )
+
+            # Data is already preprocessed in cache, no need to scale again
+            X_scaled = X
+            scaler = cache.get_scaler(symbol)
+        else:
+            # Fallback to traditional DataFrame-based approach
+            X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+            logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "XGBoost", 55, "Features prepared, training model..."
+            )
+
+            # Handle NaN/Inf values
+            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # Scale features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
 
         # Split data
         X_train, X_val, y_train, y_val = train_test_split(
@@ -1670,28 +2063,46 @@ async def train_xgboost_model(df: pd.DataFrame, job_id: str, symbol: str, job, d
 
 # ==================== Random Forest Model Training ====================
 
-async def train_random_forest_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+async def train_random_forest_model(df: pd.DataFrame, job_id: str, symbol: str, job, db, cache: PreprocessedDataCache = None) -> Dict:
     """Train Random Forest model for trading signal classification."""
     try:
         logger.info("Training Random Forest model")
 
-        # Prepare features
-        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+        # Check if we should use cached data
+        if cache is not None and cache.is_cached(symbol):
+            cache_info = cache.get_cache_info(symbol)
+            logger.info(f"Using cached data: {cache_info['n_samples']:,} samples, {cache_info['n_features']} features")
 
-        logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
-        job.progress = 55
-        db.commit()
+            h5_path = cache._get_cache_paths(symbol)['features']
+            flat_dataset = HDF5FlatDataset(str(h5_path))
 
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "Random_Forest", 55, "Features prepared, training model..."
-        )
+            X, y = flat_dataset.get_numpy_arrays()
 
-        # Handle NaN/Inf values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            logger.info(f"Loaded from cache: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
 
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "Random_Forest", 55, f"Loaded {cache_info['n_samples']:,} samples from cache..."
+            )
+
+            X_scaled = X
+            scaler = cache.get_scaler(symbol)
+        else:
+            X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+            logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "Random_Forest", 55, "Features prepared, training model..."
+            )
+
+            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
 
         # Split data
         X_train, X_val, y_train, y_val = train_test_split(
@@ -1757,7 +2168,7 @@ async def train_random_forest_model(df: pd.DataFrame, job_id: str, symbol: str, 
 
 # ==================== LightGBM Model Training ====================
 
-async def train_lightgbm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db) -> Dict:
+async def train_lightgbm_model(df: pd.DataFrame, job_id: str, symbol: str, job, db, cache: PreprocessedDataCache = None) -> Dict:
     """Train LightGBM model for trading signal classification."""
     try:
         if not LIGHTGBM_AVAILABLE:
@@ -1765,23 +2176,41 @@ async def train_lightgbm_model(df: pd.DataFrame, job_id: str, symbol: str, job, 
 
         logger.info("Training LightGBM model")
 
-        # Prepare features
-        X, y = prepare_features_for_ensemble(df, sequence_length=50)
+        # Check if we should use cached data
+        if cache is not None and cache.is_cached(symbol):
+            cache_info = cache.get_cache_info(symbol)
+            logger.info(f"Using cached data: {cache_info['n_samples']:,} samples, {cache_info['n_features']} features")
 
-        logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
-        job.progress = 55
-        db.commit()
+            h5_path = cache._get_cache_paths(symbol)['features']
+            flat_dataset = HDF5FlatDataset(str(h5_path))
 
-        await connection_manager.broadcast_model_training_progress(
-            job_id, symbol, "LightGBM", 55, "Features prepared, training model..."
-        )
+            X, y = flat_dataset.get_numpy_arrays()
 
-        # Handle NaN/Inf values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            logger.info(f"Loaded from cache: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
 
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "LightGBM", 55, f"Loaded {cache_info['n_samples']:,} samples from cache..."
+            )
+
+            X_scaled = X
+            scaler = cache.get_scaler(symbol)
+        else:
+            X, y = prepare_features_for_ensemble(df, sequence_length=50)
+
+            logger.info(f"Prepared features: X={X.shape}, y={y.shape}")
+            job.progress = 55
+            db.commit()
+
+            await connection_manager.broadcast_model_training_progress(
+                job_id, symbol, "LightGBM", 55, "Features prepared, training model..."
+            )
+
+            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
 
         # Split data
         X_train, X_val, y_train, y_val = train_test_split(

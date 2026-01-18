@@ -20,9 +20,15 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 import sys
+import copy
 sys.path.append(str(Path(__file__).parent.parent))
 from utils.gpu_manager import GPUManager, get_gpu_manager
-from utils.logger import get_logger
+from utils.logging_system import get_logger
+
+# Import new training enhancements
+from .lr_schedulers import create_scheduler, is_epoch_based_scheduler, requires_metric
+from .augmentation import TimeSeriesAugmentation, AugmentationConfig, TorchAugmentation
+from .loss_functions import create_loss_function, FocalLoss, LabelSmoothingLoss, TradingLoss
 
 logger = get_logger(__name__)
 
@@ -35,37 +41,133 @@ class TrainingConfig:
     initial_batch_size: int = 32
     learning_rate: float = 0.001
     weight_decay: float = 0.0001
-    
+
     # GPU settings
     use_mixed_precision: bool = True
     gradient_accumulation_steps: int = 1
     gradient_clipping: float = 1.0
     memory_efficient: bool = True
-    
+
     # Adaptive settings
     adaptive_batch_size: bool = True
     max_batch_size: int = 1024
     min_batch_size: int = 8
-    
+
     # Learning rate schedule
-    scheduler_type: str = 'cosine'  # 'cosine', 'plateau', 'cyclic', 'onecycle'
+    scheduler_type: str = 'cosine'  # 'cosine', 'plateau', 'cyclic', 'onecycle', 'model_specific'
     warmup_epochs: int = 10
     min_lr: float = 1e-7
-    
+
     # Early stopping
     early_stopping: bool = True
     patience: int = 50
     min_delta: float = 0.0001
-    
+
+    # Model averaging (save best N checkpoints and average at end)
+    use_model_averaging: bool = True
+    n_checkpoints_to_average: int = 5
+
+    # Data augmentation
+    use_augmentation: bool = True
+    noise_level: float = 0.01
+    mixup_prob: float = 0.3
+    cutmix_prob: float = 0.3
+
+    # Loss function
+    loss_type: str = 'cross_entropy'  # 'cross_entropy', 'focal', 'label_smoothing', 'trading'
+    focal_gamma: float = 2.0
+    label_smoothing: float = 0.1
+    direction_weight: float = 0.0  # For trading loss
+
     # Checkpointing
     checkpoint_dir: str = 'checkpoints'
     save_every: int = 10
     keep_best_only: bool = True
-    
+
     # Monitoring
     log_interval: int = 10
     tensorboard: bool = True
     profile: bool = False
+
+    # Model type (for model-specific scheduler)
+    model_type: str = 'gru_attention'
+
+
+class ModelAverager:
+    """
+    Maintains top-N checkpoints and averages their weights.
+
+    This technique often improves generalization by combining
+    multiple good solutions from different training stages.
+    """
+
+    def __init__(self, n_checkpoints: int = 5):
+        """
+        Initialize model averager.
+
+        Args:
+            n_checkpoints: Number of best checkpoints to keep
+        """
+        self.n_checkpoints = n_checkpoints
+        self.checkpoints: List[Tuple[float, Dict]] = []  # (score, state_dict)
+
+    def save(self, model: nn.Module, score: float):
+        """
+        Save checkpoint if it's among the best.
+
+        Args:
+            model: Model to save
+            score: Validation metric (lower is better for loss)
+        """
+        state = copy.deepcopy(model.state_dict())
+        self.checkpoints.append((score, state))
+
+        # Sort by score (ascending - lower is better)
+        self.checkpoints.sort(key=lambda x: x[0])
+
+        # Keep only top N
+        if len(self.checkpoints) > self.n_checkpoints:
+            self.checkpoints = self.checkpoints[:self.n_checkpoints]
+
+    def get_averaged_state_dict(self) -> Optional[Dict]:
+        """
+        Get state dict averaged over best checkpoints.
+
+        Returns:
+            Averaged state dict or None if no checkpoints
+        """
+        if not self.checkpoints:
+            return None
+
+        # Average weights from all saved checkpoints
+        avg_state = {}
+        for key in self.checkpoints[0][1].keys():
+            tensors = [ckpt[1][key].float() for _, ckpt in self.checkpoints]
+            avg_state[key] = torch.stack(tensors).mean(dim=0)
+
+        return avg_state
+
+    def load_averaged(self, model: nn.Module) -> nn.Module:
+        """
+        Load averaged weights into model.
+
+        Args:
+            model: Model to load weights into
+
+        Returns:
+            Model with averaged weights
+        """
+        avg_state = self.get_averaged_state_dict()
+        if avg_state is not None:
+            model.load_state_dict(avg_state)
+            logger.info(f"Loaded averaged weights from {len(self.checkpoints)} checkpoints")
+        return model
+
+    def get_best_score(self) -> float:
+        """Get the best (lowest) score among checkpoints."""
+        if self.checkpoints:
+            return self.checkpoints[0][0]
+        return float('inf')
 
 
 class CryptoDataset(Dataset):
@@ -119,36 +221,56 @@ class GPUEnhancedTrainer:
     def __init__(self, config: TrainingConfig, gpu_manager: Optional[GPUManager] = None):
         """
         Initialize GPU-enhanced trainer.
-        
+
         Args:
             config: Training configuration
             gpu_manager: GPU manager instance
         """
         self.config = config
         self.gpu_manager = gpu_manager or get_gpu_manager()
-        
+
         # Training state
         self.current_epoch = 0
         self.global_step = 0
         self.best_metric = float('inf')
         self.patience_counter = 0
-        
+
         # Performance tracking
         self.training_history = {
             'loss': [], 'val_loss': [], 'lr': [], 'batch_size': [],
-            'gpu_memory': [], 'epoch_time': []
+            'gpu_memory': [], 'epoch_time': [], 'accuracy': []
         }
-        
+
         # Setup directories
         self.checkpoint_dir = Path(config.checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # TensorBoard setup
         if config.tensorboard:
             from torch.utils.tensorboard import SummaryWriter
             self.writer = SummaryWriter(log_dir=str(self.checkpoint_dir / 'tensorboard'))
         else:
             self.writer = None
+
+        # Model averaging
+        if config.use_model_averaging:
+            self.model_averager = ModelAverager(config.n_checkpoints_to_average)
+        else:
+            self.model_averager = None
+
+        # Data augmentation
+        if config.use_augmentation:
+            aug_config = AugmentationConfig(
+                noise_level=config.noise_level,
+                mixup_prob=config.mixup_prob,
+                cutmix_prob=config.cutmix_prob,
+            )
+            self.augmenter = TorchAugmentation(aug_config)
+        else:
+            self.augmenter = None
+
+        # Loss function will be created in train() based on n_classes
+        self.criterion = None
     
     def train(self, model: nn.Module, train_data: Dataset, val_data: Dataset,
               optimizer_class: type = torch.optim.AdamW) -> nn.Module:
@@ -187,12 +309,41 @@ class GPUEnhancedTrainer:
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay
         )
-        
+
         # Setup learning rate scheduler
-        scheduler = self._create_scheduler(optimizer, len(train_loader))
-        
-        # Setup loss function
-        criterion = nn.MSELoss()
+        if self.config.scheduler_type == 'model_specific':
+            # Use model-specific scheduler from lr_schedulers.py
+            total_steps = len(train_loader) * self.config.epochs
+            scheduler = create_scheduler(
+                self.config.model_type,
+                optimizer,
+                total_steps=total_steps,
+                total_epochs=self.config.epochs,
+                steps_per_epoch=len(train_loader),
+            )
+            self._scheduler_is_epoch_based = is_epoch_based_scheduler(scheduler)
+            self._scheduler_requires_metric = requires_metric(scheduler)
+        else:
+            scheduler = self._create_scheduler(optimizer, len(train_loader))
+            self._scheduler_is_epoch_based = self.config.scheduler_type in ['cosine', 'plateau']
+            self._scheduler_requires_metric = self.config.scheduler_type == 'plateau'
+
+        # Setup loss function - detect n_classes from model output
+        # Try to infer n_classes from model's output layer
+        n_classes = 3  # Default
+        if hasattr(model, 'n_classes'):
+            n_classes = model.n_classes
+        elif hasattr(model, 'output_size'):
+            n_classes = model.output_size
+
+        criterion = create_loss_function(
+            loss_type=self.config.loss_type,
+            n_classes=n_classes,
+            focal_gamma=self.config.focal_gamma,
+            label_smoothing=self.config.label_smoothing,
+            direction_weight=self.config.direction_weight,
+        )
+        self.criterion = criterion
         
         # Training loop
         logger.info(f"Starting training with batch size: {batch_size}")
@@ -239,9 +390,9 @@ class GPUEnhancedTrainer:
                     val_loader = self._create_dataloader(val_data, batch_size, shuffle=False)
                     logger.info(f"Adjusted batch size to: {batch_size}")
         
-        # Final cleanup
-        self._finalize_training()
-        
+        # Final cleanup and model averaging
+        model = self._finalize_training(model)
+
         return model
     
     def _optimize_batch_size(self, model: nn.Module, dataset: Dataset) -> int:
@@ -346,6 +497,7 @@ class GPUEnhancedTrainer:
                     scheduler: Optional[Any]) -> float:
         """Train one epoch with GPU optimization."""
         model.train()
+        self.training = True  # Flag for augmentation
         total_loss = 0.0
         num_batches = 0
         
@@ -359,7 +511,15 @@ class GPUEnhancedTrainer:
             # Move data to GPU
             features = self.gpu_manager.to_device(features)
             targets = self.gpu_manager.to_device(targets)
-            
+
+            # Apply data augmentation if enabled
+            if self.augmenter is not None and self.training:
+                features, targets = self.augmenter.augment_batch(
+                    features, targets,
+                    mixup=self.config.mixup_prob > 0,
+                    cutmix=self.config.cutmix_prob > 0,
+                )
+
             # Mixed precision forward pass
             with self.gpu_manager.autocast(self.config.use_mixed_precision):
                 outputs = model(features)
@@ -503,7 +663,11 @@ class GPUEnhancedTrainer:
         is_best = val_loss < self.best_metric
         if is_best:
             self.best_metric = val_loss
-        
+
+        # Save to model averager if enabled
+        if self.model_averager is not None:
+            self.model_averager.save(model, val_loss)
+
         if not self.config.keep_best_only or is_best:
             checkpoint = {
                 'epoch': epoch,
@@ -514,11 +678,11 @@ class GPUEnhancedTrainer:
                 'config': self.config.__dict__,
                 'training_history': self.training_history
             }
-            
+
             # Save checkpoint
             checkpoint_path = self.checkpoint_dir / f'checkpoint_epoch_{epoch}.pth'
             torch.save(checkpoint, checkpoint_path)
-            
+
             if is_best:
                 best_path = self.checkpoint_dir / 'best_model.pth'
                 torch.save(checkpoint, best_path)
@@ -536,24 +700,50 @@ class GPUEnhancedTrainer:
             self.patience_counter += 1
             return self.patience_counter >= self.config.patience
     
-    def _finalize_training(self):
-        """Finalize training and save results."""
+    def _finalize_training(self, model: nn.Module) -> nn.Module:
+        """
+        Finalize training and save results.
+
+        If model averaging is enabled, returns the averaged model.
+
+        Args:
+            model: The trained model
+
+        Returns:
+            Final model (averaged if enabled, otherwise original)
+        """
+        # Apply model averaging if enabled
+        if self.model_averager is not None and len(self.model_averager.checkpoints) > 0:
+            logger.info(f"Applying model averaging over {len(self.model_averager.checkpoints)} checkpoints")
+            model = self.model_averager.load_averaged(model)
+
+            # Save averaged model
+            averaged_path = self.checkpoint_dir / 'averaged_model.pth'
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'n_checkpoints_averaged': len(self.model_averager.checkpoints),
+                'best_score': self.model_averager.get_best_score(),
+                'config': self.config.__dict__,
+            }, averaged_path)
+            logger.info(f"Saved averaged model to {averaged_path}")
+
         # Save training history
         history_path = self.checkpoint_dir / 'training_history.json'
         with open(history_path, 'w') as f:
             json.dump(self.training_history, f, indent=2)
-        
+
         # Plot training curves
         self._plot_training_curves()
-        
+
         # Close TensorBoard writer
         if self.writer:
             self.writer.close()
-        
+
         # Final GPU cleanup
         self.gpu_manager.clear_cache()
-        
+
         logger.info("Training completed successfully")
+        return model
     
     def _plot_training_curves(self):
         """Plot and save training curves."""

@@ -20,6 +20,7 @@ from typing import Dict, Optional, Callable, Tuple, List, Any
 import logging
 from pathlib import Path
 import time
+import gc
 
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
@@ -390,6 +391,14 @@ class CNNPatternPyTorchTrainer:
         logger.info(f"Training complete in {total_time:.1f}s")
         logger.info(f"  Final train accuracy: {results['train_accuracy']:.2%}")
         logger.info(f"  Final val accuracy: {results['val_accuracy']:.2%}")
+
+        # Cleanup to prevent memory leaks and semaphore issues
+        del train_loader
+        if val_loader is not None:
+            del val_loader
+        gc.collect()
+        self.gpu_manager.clear_cache()
+        logger.info("Cleaned up DataLoaders and GPU memory")
 
         return results
 

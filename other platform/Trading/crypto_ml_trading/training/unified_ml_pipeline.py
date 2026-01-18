@@ -1,6 +1,11 @@
 """
 Unified ML Training Pipeline
-Integrates supervised learning models from ML project with existing infrastructure
+Integrates supervised learning models from ML project with existing infrastructure.
+
+IMPORTANT: This module has been updated to properly handle time series data:
+- Uses temporal splits with gaps to prevent data leakage
+- Fits scalers only on training data
+- Integrates with the data auditor for pre-training validation
 """
 
 import os
@@ -22,6 +27,10 @@ warnings.filterwarnings('ignore')
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import new training infrastructure
+from crypto_ml_trading.training.config import TrainingConfig, get_default_config
+from crypto_ml_trading.features.scaler_manager import FeatureScalerManager
 
 # Import components
 from data.enhanced_data_loader import EnhancedDataLoader, BinanceDataSource
@@ -207,7 +216,17 @@ class UnifiedMLPipeline:
         return X, y
     
     def split_data(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Tuple]:
-        """Split data into train, validation, and test sets."""
+        """
+        Split data into train, validation, and test sets.
+
+        DEPRECATED: This method uses random shuffling which is inappropriate for
+        time series data. Use create_temporal_splits() instead.
+        """
+        logger.warning(
+            "split_data() uses random shuffling - consider using create_temporal_splits() "
+            "for time series data to prevent data leakage"
+        )
+
         # First split: train+val vs test
         X_temp, X_test, y_temp, y_test = train_test_split(
             X, y,
@@ -215,7 +234,7 @@ class UnifiedMLPipeline:
             random_state=42,
             stratify=y
         )
-        
+
         # Second split: train vs val
         val_size = self.config['data']['val_split'] / (1 - self.config['data']['test_split'])
         X_train, X_val, y_train, y_val = train_test_split(
@@ -224,14 +243,169 @@ class UnifiedMLPipeline:
             random_state=42,
             stratify=y_temp
         )
-        
+
         logger.info(f"Data split - Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
-        
+
         return {
             'train': (X_train, y_train),
             'val': (X_val, y_val),
             'test': (X_test, y_test)
         }
+
+    def create_temporal_splits(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        train_ratio: float = 0.70,
+        val_ratio: float = 0.15,
+        test_ratio: float = 0.15,
+        gap_samples: int = None
+    ) -> Dict[str, Tuple]:
+        """
+        Create temporal train/validation/test splits with gaps.
+
+        This is the correct way to split time series data to prevent data leakage.
+        Gaps between splits ensure that validation/test data comes from a truly
+        future time period.
+
+        Args:
+            X: Feature array of shape (samples, sequence_length, features)
+            y: Label array of shape (samples,)
+            train_ratio: Proportion of data for training (default 0.70)
+            val_ratio: Proportion of data for validation (default 0.15)
+            test_ratio: Proportion of data for testing (default 0.15)
+            gap_samples: Number of samples to skip between splits.
+                        If None, defaults to 24 hours worth at 1-minute intervals (1440)
+                        divided by sequence length.
+
+        Returns:
+            Dictionary with 'train', 'val', 'test' keys containing (X, y) tuples
+        """
+        total_samples = len(X)
+
+        # Calculate gap if not specified
+        # Default: 24 hours of data at 1-minute intervals = 1440 samples
+        # But since we create sequences, divide by sequence length
+        if gap_samples is None:
+            sequence_length = self.config['data'].get('sequence_length', 100)
+            # 24 hours gap, adjusted for sequence overlap
+            gap_samples = max(1, 1440 // sequence_length)
+
+        # Calculate split points
+        train_end = int(total_samples * train_ratio)
+        val_start = train_end + gap_samples
+        val_end = val_start + int(total_samples * val_ratio)
+        test_start = val_end + gap_samples
+
+        # Ensure we have enough data
+        if test_start >= total_samples:
+            logger.warning("Not enough data for full gaps, reducing gap size")
+            gap_samples = gap_samples // 2
+            val_start = train_end + gap_samples
+            val_end = val_start + int(total_samples * val_ratio)
+            test_start = val_end + gap_samples
+
+        if test_start >= total_samples:
+            logger.warning("Still not enough data, removing gaps")
+            gap_samples = 0
+            val_start = train_end
+            val_end = val_start + int(total_samples * val_ratio)
+            test_start = val_end
+
+        # Create splits
+        X_train, y_train = X[:train_end], y[:train_end]
+        X_val, y_val = X[val_start:val_end], y[val_start:val_end]
+        X_test, y_test = X[test_start:], y[test_start:]
+
+        # Log split information
+        logger.info(
+            f"Temporal split with {gap_samples} sample gap:\n"
+            f"  Train: {len(X_train)} samples (indices 0-{train_end-1})\n"
+            f"  Val:   {len(X_val)} samples (indices {val_start}-{val_end-1})\n"
+            f"  Test:  {len(X_test)} samples (indices {test_start}-{total_samples-1})"
+        )
+
+        return {
+            'train': (X_train, y_train),
+            'val': (X_val, y_val),
+            'test': (X_test, y_test)
+        }
+
+    def prepare_features_with_proper_scaling(
+        self,
+        df: pd.DataFrame,
+        target_col: str = 'label',
+        scaler_save_path: Optional[str] = None
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, FeatureScalerManager]:
+        """
+        Prepare features with proper scaling (fit on training data only).
+
+        This method:
+        1. Splits the data temporally
+        2. Fits scalers ONLY on training data
+        3. Transforms all splits using the fitted scalers
+
+        Args:
+            df: DataFrame with features (should NOT be pre-scaled)
+            target_col: Name of target column
+            scaler_save_path: Optional path to save fitted scalers
+
+        Returns:
+            Tuple of (train_df, val_df, test_df, scaler_manager)
+        """
+        logger.info("Preparing features with proper scaling...")
+
+        # Get config values
+        train_ratio = self.config['data'].get('train_split', 0.70)
+        val_ratio = self.config['data'].get('val_split', 0.15)
+
+        # Calculate split indices with gap
+        total = len(df)
+        gap = 1440  # 24 hours at 1-minute intervals
+
+        train_end = int(total * train_ratio)
+        val_start = train_end + gap
+        val_end = val_start + int(total * val_ratio)
+        test_start = val_end + gap
+
+        # Handle insufficient data
+        if test_start >= total:
+            gap = gap // 4
+            val_start = train_end + gap
+            val_end = val_start + int(total * val_ratio)
+            test_start = val_end + gap
+
+        # Split data
+        train_df = df.iloc[:train_end].copy()
+        val_df = df.iloc[val_start:val_end].copy()
+        test_df = df.iloc[test_start:].copy()
+
+        # Get feature columns (exclude target)
+        feature_cols = [col for col in df.columns if col != target_col]
+
+        # Create and fit scaler manager on TRAINING DATA ONLY
+        scaler_manager = FeatureScalerManager()
+        scaler_manager.fit(train_df[feature_cols])
+
+        # Transform all splits
+        train_df[feature_cols] = scaler_manager.transform(train_df[feature_cols])
+        val_df[feature_cols] = scaler_manager.transform(val_df[feature_cols])
+        test_df[feature_cols] = scaler_manager.transform(test_df[feature_cols])
+
+        # Save scalers if path provided
+        if scaler_save_path:
+            scaler_manager.save(scaler_save_path)
+            logger.info(f"Saved scalers to {scaler_save_path}")
+
+        logger.info(
+            f"Feature preparation complete:\n"
+            f"  Train: {len(train_df)} samples\n"
+            f"  Val:   {len(val_df)} samples\n"
+            f"  Test:  {len(test_df)} samples\n"
+            f"  Gap:   {gap} samples (24 hours)"
+        )
+
+        return train_df, val_df, test_df, scaler_manager
     
     def create_data_loaders(self, data_splits: Dict) -> Dict[str, DataLoader]:
         """Create PyTorch data loaders."""
