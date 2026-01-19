@@ -90,11 +90,12 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdn.socket.io", "https://unpkg.com"],
-            scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdn.socket.io", "https://unpkg.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdn.socket.io", "https://unpkg.com", "https://www.paypal.com", "https://www.paypalobjects.com"],
+            scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdn.socket.io", "https://unpkg.com", "https://www.paypal.com", "https://www.paypalobjects.com"],
             scriptSrcAttr: ["'unsafe-inline'"],
             imgSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'", "http://localhost:8002", "ws://localhost:8002"]
+            connectSrc: ["'self'", "http://localhost:8002", "ws://localhost:8002", "https://www.paypal.com", "https://www.sandbox.paypal.com"],
+            frameSrc: ["'self'", "https://www.paypal.com", "https://www.sandbox.paypal.com"]
         }
     }
 }));
@@ -1138,171 +1139,10 @@ app.get('/api/trading-platform/health', authenticateToken, async (req, res) => {
     }
 });
 
-// ==================== PAYSTACK SUBSCRIPTION API ====================
-// Paystack configuration
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-const PAYSTACK_API_URL = 'https://api.paystack.co';
-const SUBSCRIPTION_AMOUNT = 20000; // ZAR 200.00 in cents (Paystack uses smallest currency unit)
-const PLAN_CODE = 'PLN_o6aocIukczuw4dk'; // Actual Paystack plan code
-
-// Helper: Verify Paystack webhook signature
-function verifyPaystackSignature(payload, signature) {
-    const crypto = require('crypto');
-    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
-        .update(JSON.stringify(payload))
-        .digest('hex');
-    return hash === signature;
-}
-
-// Initialize subscription payment
-app.post('/api/subscription/initialize', authenticateToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-
-        // Get user email from database
-        const userResult = await db.query('SELECT email FROM users WHERE id = $1', [userId]);
-        if (userResult.rows.length === 0) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        const userEmail = userResult.rows[0].email;
-
-        // Generate unique transaction reference
-        const reference = `SUB_${userId}_${Date.now()}`;
-
-        // Initialize Paystack transaction
-        const paystackResponse = await axios.post(
-            `${PAYSTACK_API_URL}/transaction/initialize`,
-            {
-                email: userEmail,
-                amount: SUBSCRIPTION_AMOUNT, // ZAR 200.00 in cents
-                currency: 'ZAR',
-                reference: reference,
-                plan: PLAN_CODE,
-                callback_url: `${req.protocol}://${req.get('host')}/subscription-success`,
-                metadata: {
-                    user_id: userId,
-                    subscription_type: 'monthly'
-                }
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        // Store pending payment in database
-        await db.query(
-            `INSERT INTO payment_history (user_id, reference, amount, currency, status, customer_email, payment_type)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [userId, reference, 10.00, 'USD', 'pending', userEmail, 'subscription']
-        );
-
-        res.json({
-            success: true,
-            authorization_url: paystackResponse.data.data.authorization_url,
-            access_code: paystackResponse.data.data.access_code,
-            reference: reference
-        });
-
-    } catch (error) {
-        console.error('Paystack initialization error:', error.response?.data || error.message);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to initialize payment',
-            error: error.response?.data?.message || error.message
-        });
-    }
-});
-
-// Verify payment transaction
-app.get('/api/subscription/verify/:reference', authenticateToken, async (req, res) => {
-    try {
-        const { reference } = req.params;
-        const userId = req.user.id;
-
-        // Verify with Paystack
-        const paystackResponse = await axios.get(
-            `${PAYSTACK_API_URL}/transaction/verify/${reference}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
-                }
-            }
-        );
-
-        const transaction = paystackResponse.data.data;
-
-        if (transaction.status === 'success') {
-            // Calculate subscription dates
-            const now = new Date();
-            const expiresAt = new Date(now);
-            expiresAt.setMonth(expiresAt.getMonth() + 1); // Add 1 month
-
-            // Update user subscription status
-            await db.query(
-                `UPDATE users
-                 SET subscription_status = 'active',
-                     subscription_code = $1,
-                     subscription_started_at = $2,
-                     subscription_expires_at = $3,
-                     auto_renew = true
-                 WHERE id = $4`,
-                [transaction.subscription_code || null, now, expiresAt, userId]
-            );
-
-            // Update payment history
-            await db.query(
-                `UPDATE payment_history
-                 SET status = 'success',
-                     paystack_reference = $1,
-                     authorization_code = $2,
-                     paid_at = $3,
-                     metadata = $4
-                 WHERE reference = $5`,
-                [
-                    transaction.reference,
-                    transaction.authorization?.authorization_code || null,
-                    now,
-                    JSON.stringify(transaction),
-                    reference
-                ]
-            );
-
-            res.json({
-                success: true,
-                message: 'Subscription activated successfully',
-                subscription: {
-                    status: 'active',
-                    started_at: now,
-                    expires_at: expiresAt
-                }
-            });
-        } else {
-            // Update payment as failed
-            await db.query(
-                `UPDATE payment_history SET status = 'failed' WHERE reference = $1`,
-                [reference]
-            );
-
-            res.json({
-                success: false,
-                message: 'Payment verification failed',
-                status: transaction.status
-            });
-        }
-
-    } catch (error) {
-        console.error('Payment verification error:', error.response?.data || error.message);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to verify payment',
-            error: error.response?.data?.message || error.message
-        });
-    }
-});
+// ==================== PAYPAL SUBSCRIPTION API ====================
+// PayPal Configuration
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+const PAYPAL_PLAN_ID = process.env.PAYPAL_PLAN_ID;
 
 // Get subscription status
 app.get('/api/subscription/status', authenticateToken, async (req, res) => {
@@ -1352,12 +1192,50 @@ app.get('/api/subscription/status', authenticateToken, async (req, res) => {
     }
 });
 
+// Activate PayPal subscription
+app.post('/api/subscription/paypal/activate', authenticateToken, async (req, res) => {
+    try {
+        const { subscriptionId } = req.body;
+        const userId = req.user.id;
+
+        if (!subscriptionId) {
+            return res.status(400).json({ success: false, message: 'Subscription ID is required' });
+        }
+
+        const expiresAt = new Date();
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+        // Update user subscription status
+        await db.query(`
+            UPDATE users SET
+                subscription_status = 'active',
+                subscription_code = $1,
+                subscription_started_at = CURRENT_TIMESTAMP,
+                subscription_expires_at = $2,
+                auto_renew = true
+            WHERE id = $3
+        `, [subscriptionId, expiresAt, userId]);
+
+        // Log payment in history
+        await db.query(`
+            INSERT INTO payment_history (user_id, reference, paystack_reference, amount, currency, status, payment_type)
+            VALUES ($1, $2, $3, $4, $5, 'success', 'paypal')
+        `, [userId, `PAYPAL_${userId}_${Date.now()}`, subscriptionId, 15.00, 'USD']);
+
+        res.json({ success: true, message: 'Subscription activated' });
+
+    } catch (error) {
+        console.error('PayPal activation error:', error);
+        res.status(500).json({ success: false, message: 'Failed to activate subscription' });
+    }
+});
+
 // Cancel subscription
 app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // Get subscription code
+        // Get subscription status
         const userResult = await db.query(
             'SELECT subscription_code, subscription_status FROM users WHERE id = $1',
             [userId]
@@ -1367,35 +1245,15 @@ app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const { subscription_code, subscription_status } = userResult.rows[0];
+        const { subscription_status } = userResult.rows[0];
 
         if (subscription_status !== 'active') {
             return res.status(400).json({ message: 'No active subscription to cancel' });
         }
 
-        // Disable auto-renewal in Paystack (if subscription code exists)
-        if (subscription_code) {
-            try {
-                await axios.post(
-                    `${PAYSTACK_API_URL}/subscription/disable`,
-                    {
-                        code: subscription_code,
-                        token: subscription_code
-                    },
-                    {
-                        headers: {
-                            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-            } catch (paystackError) {
-                console.error('Paystack cancellation error:', paystackError.response?.data);
-                // Continue even if Paystack fails - we still want to update our database
-            }
-        }
-
-        // Update user subscription (keep active until expiry, but disable auto-renew)
+        // Update user subscription (disable auto-renew and mark as cancelled)
+        // Note: For PayPal, actual cancellation should be done via PayPal dashboard
+        // This just updates our local database
         await db.query(
             `UPDATE users
              SET auto_renew = false,
@@ -1406,7 +1264,7 @@ app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Subscription cancelled. Access will remain until the end of the current billing period.'
+            message: 'Subscription cancelled. Access will remain until the end of the current billing period. Please also cancel via PayPal to stop future charges.'
         });
 
     } catch (error) {
@@ -1414,170 +1272,6 @@ app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
         res.status(500).json({ message: 'Failed to cancel subscription' });
     }
 });
-
-// Paystack webhook handler
-app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-    try {
-        const signature = req.headers['x-paystack-signature'];
-        const payload = req.body;
-
-        // Verify webhook signature
-        if (!verifyPaystackSignature(payload, signature)) {
-            console.error('Invalid Paystack webhook signature');
-            return res.status(400).json({ error: 'Invalid signature' });
-        }
-
-        const event = JSON.parse(payload.toString());
-
-        // Log webhook
-        await db.query(
-            `INSERT INTO webhook_logs (event_type, reference, payload, signature, ip_address)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-                event.event,
-                event.data?.reference || null,
-                event,
-                signature,
-                req.ip
-            ]
-        );
-
-        // Handle different event types
-        switch (event.event) {
-            case 'charge.success':
-                await handleChargeSuccess(event.data);
-                break;
-
-            case 'subscription.create':
-                await handleSubscriptionCreate(event.data);
-                break;
-
-            case 'subscription.disable':
-                await handleSubscriptionDisable(event.data);
-                break;
-
-            case 'subscription.not_renew':
-                await handleSubscriptionNotRenew(event.data);
-                break;
-
-            default:
-                console.log(`Unhandled webhook event: ${event.event}`);
-        }
-
-        // Mark webhook as processed
-        await db.query(
-            `UPDATE webhook_logs
-             SET processed = true, processed_at = CURRENT_TIMESTAMP
-             WHERE reference = $1 AND event_type = $2`,
-            [event.data?.reference || null, event.event]
-        );
-
-        res.status(200).json({ success: true });
-
-    } catch (error) {
-        console.error('Webhook processing error:', error);
-
-        // Log error
-        try {
-            await db.query(
-                `UPDATE webhook_logs
-                 SET processing_error = $1
-                 WHERE reference = $2`,
-                [error.message, event?.data?.reference || null]
-            );
-        } catch (dbError) {
-            console.error('Failed to log webhook error:', dbError);
-        }
-
-        res.status(500).json({ error: 'Webhook processing failed' });
-    }
-});
-
-// Webhook event handlers
-async function handleChargeSuccess(data) {
-    try {
-        const reference = data.reference;
-
-        // Update payment history
-        await db.query(
-            `UPDATE payment_history
-             SET status = 'success',
-                 paystack_reference = $1,
-                 paid_at = CURRENT_TIMESTAMP,
-                 metadata = $2
-             WHERE reference = $3`,
-            [data.reference, JSON.stringify(data), reference]
-        );
-
-        console.log(`Charge successful: ${reference}`);
-    } catch (error) {
-        console.error('Error handling charge success:', error);
-    }
-}
-
-async function handleSubscriptionCreate(data) {
-    try {
-        const email = data.customer?.email;
-        const subscriptionCode = data.subscription_code;
-
-        // Find user by email
-        const userResult = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-
-        if (userResult.rows.length > 0) {
-            const userId = userResult.rows[0].id;
-
-            // Update subscription
-            await db.query(
-                `UPDATE users
-                 SET subscription_code = $1,
-                     subscription_status = 'active'
-                 WHERE id = $2`,
-                [subscriptionCode, userId]
-            );
-
-            console.log(`Subscription created for user ${userId}: ${subscriptionCode}`);
-        }
-    } catch (error) {
-        console.error('Error handling subscription create:', error);
-    }
-}
-
-async function handleSubscriptionDisable(data) {
-    try {
-        const subscriptionCode = data.subscription_code;
-
-        // Find user and update status
-        await db.query(
-            `UPDATE users
-             SET subscription_status = 'cancelled',
-                 auto_renew = false
-             WHERE subscription_code = $1`,
-            [subscriptionCode]
-        );
-
-        console.log(`Subscription disabled: ${subscriptionCode}`);
-    } catch (error) {
-        console.error('Error handling subscription disable:', error);
-    }
-}
-
-async function handleSubscriptionNotRenew(data) {
-    try {
-        const subscriptionCode = data.subscription_code;
-
-        // Mark subscription as expiring
-        await db.query(
-            `UPDATE users
-             SET auto_renew = false
-             WHERE subscription_code = $1`,
-            [subscriptionCode]
-        );
-
-        console.log(`Subscription will not renew: ${subscriptionCode}`);
-    } catch (error) {
-        console.error('Error handling subscription not renew:', error);
-    }
-}
 
 // Subscription success page
 app.get('/subscription-success', (req, res) => {

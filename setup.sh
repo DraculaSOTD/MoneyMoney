@@ -221,12 +221,11 @@ if [ ! -f ".env" ]; then
     else
         print_warning "No .env.example found, creating minimal .env"
         cat > .env << EOF
-PORT=3000
+PORT=4000
 NODE_ENV=development
 JWT_SECRET=tradingdashboard_jwt_secret_key_2024_change_in_production
 TRADING_API_URL=http://localhost:8002
 DATABASE_URL=$DATABASE_URL
-DATABASE_PATH=./database/tradingdashboard.db
 SESSION_EXPIRE_DAYS=7
 EOF
         print_success "Created minimal .env file"
@@ -414,7 +413,7 @@ echo "1. Start the applications:"
 echo -e "   ${CYAN}./start-all.sh${NC}"
 echo ""
 echo "2. Access MoneyMoney dashboard:"
-echo -e "   ${CYAN}http://localhost:3000/auth${NC}"
+echo -e "   ${CYAN}http://localhost:4000/auth${NC}"
 echo ""
 echo "3. Login with test account:"
 echo -e "   Email:    ${CYAN}test@example.com${NC}"
@@ -429,8 +428,8 @@ echo ""
 
 print_header "Useful URLs"
 
-echo "  • MoneyMoney Dashboard:  http://localhost:3000/dashboard"
-echo "  • MoneyMoney Login:      http://localhost:3000/auth"
+echo "  • MoneyMoney Dashboard:  http://localhost:4000/dashboard"
+echo "  • MoneyMoney Login:      http://localhost:4000/auth"
 echo "  • Trading Platform API:  http://localhost:8001"
 echo "  • API Documentation:     http://localhost:8001/docs"
 echo ""

@@ -1,5 +1,4 @@
 -- Create users table in PostgreSQL
--- Matches the Node.js SQLite schema for MoneyMoney users
 
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

@@ -319,7 +319,7 @@
                 <div id="planSection" class="plan-section">
                     <div class="plan-card">
                         <h3 style="font-size: 1.5em; margin-bottom: 10px;">Premium Access</h3>
-                        <div class="plan-price">R200<span>/month</span></div>
+                        <div class="plan-price">$15<span>/month</span></div>
 
                         <ul class="plan-features">
                             <li>
@@ -349,9 +349,7 @@
                         </ul>
 
                         <div id="subscribeButton" class="hidden">
-                            <button class="btn btn-primary" onclick="initializePayment()">
-                                Subscribe Now
-                            </button>
+                            <div id="paypal-button-container" style="max-width: 300px; margin: 0 auto;"></div>
                         </div>
 
                         <div id="activeControls" class="actions hidden">
@@ -375,9 +373,10 @@
         </div>
     </div>
 
-    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=AaqEGDCZdOTc18xf7B7AN7P1GjKmSdZ_H2IntYhov-8pEllXjDlvGbBKuY7lwT9e44rcGSC728vp1hV9&vault=true&intent=subscription"></script>
     <script>
         let subscriptionData = null;
+        const PAYPAL_PLAN_ID = 'P-2R411487DK5872011NFH23OQ';
 
         // Get auth token from cookie
         function getAuthToken() {
@@ -492,45 +491,73 @@
 
                 subscribeButton.classList.remove('hidden');
                 activeControls.classList.add('hidden');
+
+                // Initialize PayPal button
+                initPayPalButton();
             }
         }
 
-        // Initialize Paystack payment
-        async function initializePayment() {
-            try {
-                const token = getAuthToken();
-                const button = event.target;
-                button.disabled = true;
-                button.innerHTML = '<span class="loading"></span>Processing...';
+        // Initialize PayPal subscription button
+        function initPayPalButton() {
+            const container = document.getElementById('paypal-button-container');
+            if (!container || container.hasChildNodes()) return;
 
-                const response = await fetch('/api/subscription/initialize', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+            paypal.Buttons({
+                style: {
+                    shape: 'pill',
+                    color: 'gold',
+                    layout: 'vertical',
+                    label: 'subscribe'
+                },
+                createSubscription: function(data, actions) {
+                    return actions.subscription.create({
+                        plan_id: PAYPAL_PLAN_ID
+                    });
+                },
+                onApprove: async function(data, actions) {
+                    try {
+                        const token = getAuthToken();
+
+                        // Activate subscription in our backend
+                        const response = await fetch('/api/subscription/paypal/activate', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                subscriptionId: data.subscriptionID
+                            })
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            showAlert('Subscription activated successfully!', 'success');
+                            setTimeout(() => {
+                                loadSubscriptionStatus();
+                            }, 1500);
+                        } else {
+                            throw new Error(result.message || 'Failed to activate subscription');
+                        }
+                    } catch (error) {
+                        console.error('Activation error:', error);
+                        showAlert(error.message || 'Failed to activate subscription', 'error');
                     }
-                });
-
-                const data = await response.json();
-
-                if (!response.ok || !data.success) {
-                    throw new Error(data.message || 'Failed to initialize payment');
+                },
+                onError: function(err) {
+                    console.error('PayPal error:', err);
+                    showAlert('Payment failed. Please try again.', 'error');
+                },
+                onCancel: function(data) {
+                    showAlert('Payment cancelled.', 'error');
                 }
-
-                // Redirect to Paystack payment page
-                window.location.href = data.authorization_url;
-
-            } catch (error) {
-                console.error('Payment initialization error:', error);
-                showAlert(error.message || 'Failed to initialize payment', 'error');
-                event.target.disabled = false;
-                event.target.textContent = 'Subscribe Now';
-            }
+            }).render('#paypal-button-container');
         }
 
         // Cancel subscription
         async function cancelSubscription() {
-            if (!confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.')) {
+            if (!confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your billing period. Note: Please also cancel via PayPal to stop future charges.')) {
                 return;
             }
 

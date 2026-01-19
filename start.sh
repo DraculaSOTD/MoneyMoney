@@ -2,7 +2,7 @@
 
 # MoneyMoney Startup Script
 # ==========================
-# Automatically kills existing processes on ports 3000 and 8001 before starting
+# Automatically kills existing processes on ports 4000 and 8001 before starting
 
 echo "💰 Starting MoneyMoney..."
 echo ""
@@ -38,7 +38,7 @@ kill_port() {
 # Kill existing processes on required ports
 echo "🧹 Cleaning up existing processes..."
 kill_port 8001 "Python Backend"
-kill_port 3000 "Node.js Frontend"
+kill_port 4000 "Node.js Frontend"
 echo ""
 
 # Give processes time to fully terminate
@@ -65,10 +65,10 @@ if [ ! -d "database" ]; then
 fi
 
 # Start the server
-echo "🌐 Starting MoneyMoney server on http://localhost:3000"
-echo "🏠 Landing page: http://localhost:3000"
-echo "🔐 Login page: http://localhost:3000/auth"
-echo "📊 Dashboard: http://localhost:3000/dashboard"
+echo "🌐 Starting MoneyMoney server on http://localhost:4000"
+echo "🏠 Landing page: http://localhost:4000"
+echo "🔐 Login page: http://localhost:4000/auth"
+echo "📊 Dashboard: http://localhost:4000/dashboard"
 echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""
